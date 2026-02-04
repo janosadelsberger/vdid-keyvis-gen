@@ -2,6 +2,7 @@
 
 import React from "react";
 import { format } from "date-fns";
+import JSZip from "jszip";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { DatePicker } from "@/components/ui/date-picker";
 import { TimePicker } from "@/components/ui/time-picker";
+import { Checkbox } from "@/components/ui/checkbox";
 
 type EventFormState = {
   eventFormat: string;
@@ -17,6 +19,8 @@ type EventFormState = {
   subtitle: string;
   date: Date | null;
   time: string;
+  place: string;
+  isOnline: boolean;
 };
 
 type FormatKey =
@@ -70,6 +74,8 @@ export function EventAssetGenerator() {
     subtitle: "",
     date: null,
     time: "",
+    place: "",
+    isOnline: false,
   });
   const [logoLoaded, setLogoLoaded] = React.useState(false);
   const logoRef = React.useRef<HTMLImageElement | null>(null);
@@ -89,7 +95,7 @@ export function EventAssetGenerator() {
   }, []);
 
   const handleChangeText = (
-    field: "title" | "subtitle" | "time",
+    field: "title" | "subtitle" | "time" | "place",
   ): React.ChangeEventHandler<HTMLInputElement | HTMLTextAreaElement> => {
     return (e) => {
       setForm((prev) => ({ ...prev, [field]: e.target.value }));
@@ -127,10 +133,6 @@ export function EventAssetGenerator() {
     }
   }, [logoLoaded, renderAll]);
 
-  const handleGenerateClick = () => {
-    renderAll();
-  };
-
   const handleDownload = (key: FormatKey) => {
     const canvas = canvasRefs.current[key];
     if (!canvas) return;
@@ -141,116 +143,156 @@ export function EventAssetGenerator() {
     link.click();
   };
 
+  const handleDownloadAll = async () => {
+    if (!logoLoaded) return;
+
+    const zip = new JSZip();
+    const formatNames: Record<FormatKey, string> = {
+      websitePreview: "Website-Preview-800x800",
+      websiteHeader: "Website-Header-1920x800",
+      instagramGrid: "Instagram-Grid-1080x1350",
+      instagramStory: "Instagram-Story-1080x1920",
+      linkedinSquare: "LinkedIn-1080x1080",
+    };
+
+    // Ensure all canvases are rendered
+    renderAll();
+
+    // Wait a bit for canvases to render
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    // Add each canvas as a PNG to the zip
+    (Object.keys(FORMAT_CONFIG) as FormatKey[]).forEach((key) => {
+      const canvas = canvasRefs.current[key];
+      if (canvas) {
+        const dataUrl = canvas.toDataURL("image/png");
+        const base64Data = dataUrl.split(",")[1];
+        zip.file(`${formatNames[key]}.png`, base64Data, { base64: true });
+      }
+    });
+
+    // Generate and download the zip file
+    const blob = await zip.generateAsync({ type: "blob" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `vdid-assets-${Date.now()}.zip`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-6 lg:flex-row">
-        <Card className="flex-1">
-          <CardHeader>
-            <CardTitle>VDID Event Details</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-xs text-slate-600">
-              Logo wird als fest eingebettete VDID-Bildmarke erwartet (
-              <code>public/VDID_Logo_neg.svg</code>). Hintergrund: VDID-Blau
-              (#0A2CD9), Text: Weiß in Roboto.
-            </p>
-            <div className="space-y-1">
-              <Label htmlFor="eventFormat">Eventformat</Label>
-              <select
-                id="eventFormat"
-                value={form.eventFormat}
-                onChange={(e) => {
-                  setForm((prev) => ({ ...prev, eventFormat: e.target.value }));
-                }}
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <option value="–">–</option>
-                <option value="VDID Design.Wissen.Diskus.">
-                  VDID Design.Wissen.Diskus.
-                </option>
-                <option value="VDID Insight Update">VDID Insight Update</option>
-                <option value="other">other</option>
-              </select>
-              {form.eventFormat === "other" && (
-                <Input
-                  value={form.eventFormatCustom}
-                  onChange={(e) => {
-                    setForm((prev) => ({
-                      ...prev,
-                      eventFormatCustom: e.target.value,
-                    }));
-                  }}
-                  placeholder="Eigenes Eventformat eingeben"
-                  className="mt-2"
+      <Card>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Left Column */}
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <Label htmlFor="title">Titel *</Label>
+                <Textarea
+                  id="title"
+                  value={form.title}
+                  onChange={handleChangeText("title")}
+                  placeholder="Titel der Veranstaltung"
+                  rows={2}
+                  className="resize-none"
                 />
-              )}
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="title">Titel *</Label>
-              <Textarea
-                id="title"
-                value={form.title}
-                onChange={handleChangeText("title")}
-                placeholder="Titel der Veranstaltung"
-                rows={2}
-                className="resize-none"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="subtitle">Unterzeile (optional)</Label>
-              <Textarea
-                id="subtitle"
-                value={form.subtitle}
-                onChange={handleChangeText("subtitle")}
-                placeholder="Kurze Beschreibung oder Claim"
-                rows={2}
-                className="resize-none"
-              />
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-1">
-                <Label>Datum</Label>
-                <DatePicker date={form.date} onChange={handleDateChange} />
               </div>
               <div className="space-y-1">
-                <Label htmlFor="time">Uhrzeit</Label>
-                <TimePicker value={form.time} onChange={handleTimeChange} />
+                <Label htmlFor="subtitle">Unterzeile</Label>
+                <Textarea
+                  id="subtitle"
+                  value={form.subtitle}
+                  onChange={handleChangeText("subtitle")}
+                  placeholder="Kurze Beschreibung oder Claim"
+                  rows={2}
+                  className="resize-none"
+                />
               </div>
             </div>
-            <div className="pt-2">
-              <Button onClick={handleGenerateClick} disabled={!logoLoaded}>
-                Assets generieren
-              </Button>
-              {!logoLoaded && (
-                <p className="mt-2 text-xs text-slate-500">
-                  Logo wird geladen… Stelle sicher, dass{" "}
-                  <code>public/VDID_Logo_neg.svg</code> existiert.
-                </p>
-              )}
+
+            {/* Right Column */}
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <Label htmlFor="eventFormat">Eventformat</Label>
+                <select
+                  id="eventFormat"
+                  value={form.eventFormat}
+                  onChange={(e) => {
+                    setForm((prev) => ({ ...prev, eventFormat: e.target.value }));
+                  }}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-slate-900 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <option value="–">–</option>
+                  <option value="VDID Design.Wissen.Diskurs.">
+                    VDID Design.Wissen.Diskurs.
+                  </option>
+                  <option value="VDID Insight Update">VDID Insight Update</option>
+                  <option value="other">other</option>
+                </select>
+                {form.eventFormat === "other" && (
+                  <Input
+                    value={form.eventFormatCustom}
+                    onChange={(e) => {
+                      setForm((prev) => ({
+                        ...prev,
+                        eventFormatCustom: e.target.value,
+                      }));
+                    }}
+                    placeholder="Eigenes Eventformat eingeben"
+                    className="mt-2"
+                  />
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <Label>Datum</Label>
+                  <DatePicker date={form.date} onChange={handleDateChange} />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="time">Uhrzeit</Label>
+                  <TimePicker value={form.time} onChange={handleTimeChange} />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="place">Ort</Label>
+                <Input
+                  id="place"
+                  value={form.place}
+                  onChange={handleChangeText("place")}
+                  placeholder="Veranstaltungsort"
+                />
+              </div>
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="isOnline"
+                  checked={form.isOnline}
+                  onChange={(e) => {
+                    setForm((prev) => ({ ...prev, isOnline: e.target.checked }));
+                  }}
+                />
+                <Label htmlFor="isOnline" className="cursor-pointer">
+                  Online-Veranstaltung
+                </Label>
+              </div>
             </div>
-          </CardContent>
-        </Card>
-        <Card className="flex-1">
-          <CardHeader>
-            <CardTitle>Hinweise</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2 text-sm text-slate-700">
-            <p>
-              Alle Formate nutzen VDID-Blau als Vollflächenhintergrund mit
-              weißer Typografie in Roboto, wie im VDID Styleguide beschrieben.
-            </p>
-            <p>
-              Website-Formate nutzen nur Logo und Titel. Social-Formate
-              enthalten zusätzlich Unterzeile, Datum und Uhrzeit, sofern
-              angegeben.
-            </p>
-            <p>
-              Du kannst jedes Asset unten als PNG herunterladen und direkt in
-              Website oder Social Media verwenden.
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+          </div>
+
+          {/* Download all button */}
+          <div className="pt-2">
+            <Button onClick={handleDownloadAll} disabled={!logoLoaded}>
+              Alle Assets als ZIP herunterladen
+            </Button>
+            {!logoLoaded && (
+              <p className="mt-2 text-xs text-slate-500">
+                Logo wird geladen… Stelle sicher, dass{" "}
+                <code>public/VDID_Logo_neg.svg</code> existiert.
+              </p>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-4 lg:grid-cols-2">
         {(Object.keys(FORMAT_CONFIG) as FormatKey[]).map((key) => {
@@ -374,9 +416,16 @@ function drawFormat(
   }
   totalTextHeight += titleHeight;
   
-  // Calculate meta parts for date/time
+  // Calculate meta parts for date/time/place
   const dateText = form.date ? format(form.date, "dd.MM.yyyy") : "";
   const metaParts = [dateText, form.time].filter(Boolean);
+  
+  // Add place or "Online" based on checkbox
+  if (form.isOnline) {
+    metaParts.push("Online");
+  } else if (form.place) {
+    metaParts.push(form.place);
+  }
   
   // Only add subtitle and date/time for formats that include meta
   if (cfg.includeMeta) {
