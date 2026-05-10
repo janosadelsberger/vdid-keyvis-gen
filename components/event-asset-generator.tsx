@@ -76,7 +76,7 @@ export function EventAssetGenerator() {
   const [form, setForm] = React.useState<EventFormState>({
     eventFormat: "–",
     eventFormatCustom: "",
-    title: "VDID Event",
+    title: "",
     subtitle: "",
     date: null,
     time: "",
@@ -426,6 +426,104 @@ export function EventAssetGenerator() {
     <>
       <div className="space-y-6">
       <Card>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Left Column */}
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <Label htmlFor="title">Titel *</Label>
+                <Textarea
+                  id="title"
+                  value={form.title}
+                  onChange={handleChangeText("title")}
+                  placeholder="VDID Event"
+                  rows={2}
+                  className="resize-none"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="subtitle">Unterzeile</Label>
+                <Textarea
+                  id="subtitle"
+                  value={form.subtitle}
+                  onChange={handleChangeText("subtitle")}
+                  placeholder="Kurze Beschreibung oder Claim"
+                  rows={2}
+                  className="resize-none"
+                />
+              </div>
+            </div>
+
+            {/* Right Column */}
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <Label htmlFor="eventFormat">Eventformat</Label>
+                <select
+                  id="eventFormat"
+                  value={form.eventFormat}
+                  onChange={(e) => {
+                    setForm((prev) => ({ ...prev, eventFormat: e.target.value }));
+                  }}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-slate-900 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <option value="–">–</option>
+                  <option value="VDID Design.Wissen.Diskurs.">
+                    VDID Design.Wissen.Diskurs.
+                  </option>
+                  <option value="VDID Insight Update">VDID Insight Update</option>
+                  <option value="other">other</option>
+                </select>
+                {form.eventFormat === "other" && (
+                  <Input
+                    value={form.eventFormatCustom}
+                    onChange={(e) => {
+                      setForm((prev) => ({
+                        ...prev,
+                        eventFormatCustom: e.target.value,
+                      }));
+                    }}
+                    placeholder="Eigenes Eventformat eingeben"
+                    className="mt-2"
+                  />
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <Label>Datum</Label>
+                  <DatePicker date={form.date} onChange={handleDateChange} />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="time">Uhrzeit</Label>
+                  <TimePicker value={form.time} onChange={handleTimeChange} />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="place">Ort</Label>
+                <Input
+                  id="place"
+                  value={form.place}
+                  onChange={handleChangeText("place")}
+                  placeholder="Veranstaltungsort"
+                />
+              </div>
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="isOnline"
+                  checked={form.isOnline}
+                  onChange={(e) => {
+                    setForm((prev) => ({ ...prev, isOnline: e.target.checked }));
+                  }}
+                />
+                <Label htmlFor="isOnline" className="cursor-pointer">
+                  Online-Veranstaltung
+                </Label>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
         <CardHeader>
           <CardTitle>Hintergrund</CardTitle>
         </CardHeader>
@@ -568,117 +666,6 @@ export function EventAssetGenerator() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Left Column */}
-            <div className="space-y-4">
-              <div className="space-y-1">
-                <Label htmlFor="title">Titel *</Label>
-                <Textarea
-                  id="title"
-                  value={form.title}
-                  onChange={handleChangeText("title")}
-                  placeholder="Titel der Veranstaltung"
-                  rows={2}
-                  className="resize-none"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="subtitle">Unterzeile</Label>
-                <Textarea
-                  id="subtitle"
-                  value={form.subtitle}
-                  onChange={handleChangeText("subtitle")}
-                  placeholder="Kurze Beschreibung oder Claim"
-                  rows={2}
-                  className="resize-none"
-                />
-              </div>
-            </div>
-
-            {/* Right Column */}
-            <div className="space-y-4">
-              <div className="space-y-1">
-                <Label htmlFor="eventFormat">Eventformat</Label>
-                <select
-                  id="eventFormat"
-                  value={form.eventFormat}
-                  onChange={(e) => {
-                    setForm((prev) => ({ ...prev, eventFormat: e.target.value }));
-                  }}
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-slate-900 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <option value="–">–</option>
-                  <option value="VDID Design.Wissen.Diskurs.">
-                    VDID Design.Wissen.Diskurs.
-                  </option>
-                  <option value="VDID Insight Update">VDID Insight Update</option>
-                  <option value="other">other</option>
-                </select>
-                {form.eventFormat === "other" && (
-                  <Input
-                    value={form.eventFormatCustom}
-                    onChange={(e) => {
-                      setForm((prev) => ({
-                        ...prev,
-                        eventFormatCustom: e.target.value,
-                      }));
-                    }}
-                    placeholder="Eigenes Eventformat eingeben"
-                    className="mt-2"
-                  />
-                )}
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <Label>Datum</Label>
-                  <DatePicker date={form.date} onChange={handleDateChange} />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="time">Uhrzeit</Label>
-                  <TimePicker value={form.time} onChange={handleTimeChange} />
-                </div>
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="place">Ort</Label>
-                <Input
-                  id="place"
-                  value={form.place}
-                  onChange={handleChangeText("place")}
-                  placeholder="Veranstaltungsort"
-                />
-              </div>
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="isOnline"
-                  checked={form.isOnline}
-                  onChange={(e) => {
-                    setForm((prev) => ({ ...prev, isOnline: e.target.checked }));
-                  }}
-                />
-                <Label htmlFor="isOnline" className="cursor-pointer">
-                  Online-Veranstaltung
-                </Label>
-              </div>
-            </div>
-          </div>
-
-          {/* Download all button */}
-          <div className="pt-2">
-            <Button onClick={handleDownloadAll} disabled={!assetsReady}>
-              Alle Assets als ZIP herunterladen
-            </Button>
-            {!logoLoaded && (
-              <p className="mt-2 text-xs text-slate-500">
-                Logo wird geladen… Stelle sicher, dass{" "}
-                <code>public/VDID_Logo_neg.svg</code> existiert.
-              </p>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
       <div className="space-y-2">
         <p className="text-xs text-slate-500">
           Vorschau anklicken für große Ansicht (volle Exportauflösung).
@@ -728,6 +715,18 @@ export function EventAssetGenerator() {
             </Card>
           );
         })}
+        </div>
+
+        <div className="border-t border-slate-200 pt-6">
+          <Button onClick={handleDownloadAll} disabled={!assetsReady}>
+            Alle Assets als ZIP herunterladen
+          </Button>
+          {!logoLoaded && (
+            <p className="mt-2 text-xs text-slate-500">
+              Logo wird geladen… Stelle sicher, dass{" "}
+              <code>public/VDID_Logo_neg.svg</code> existiert.
+            </p>
+          )}
         </div>
       </div>
     </div>
@@ -906,7 +905,9 @@ function drawFormat(
     : [];
   
   ctx.font = `500 ${titleFontSize}px Roboto, system-ui, sans-serif`;
-  const titleLines = wrapText(ctx, form.title || "VDID Event", titleMaxWidth);
+  const titleLines = form.title.trim()
+    ? wrapText(ctx, form.title, titleMaxWidth)
+    : [];
   ctx.font = `400 ${subtitleFontSize}px Roboto, system-ui, sans-serif`;
   const subtitleLines = form.subtitle ? wrapText(ctx, form.subtitle, titleMaxWidth) : [];
   
@@ -943,7 +944,8 @@ function drawFormat(
   // Only add subtitle and date/time for formats that include meta
   if (cfg.includeMeta) {
     if (form.subtitle && subtitleLines.length > 0) {
-      totalTextHeight += spacingAfterTitle + subtitleHeight;
+      totalTextHeight +=
+        (titleLines.length > 0 ? spacingAfterTitle : 0) + subtitleHeight;
     }
     if (metaParts.length > 0) {
       totalTextHeight += spacingAfterSubtitle + metaHeight;
@@ -1006,7 +1008,9 @@ function drawFormat(
 
   // Draw Subtitle
   if (form.subtitle && subtitleLines.length > 0) {
-    y += spacingAfterTitle;
+    if (titleLines.length > 0) {
+      y += spacingAfterTitle;
+    }
     ctx.font = `400 ${subtitleFontSize}px Roboto, system-ui, sans-serif`;
     for (const line of subtitleLines) {
       ctx.fillText(line, marginX, y);
