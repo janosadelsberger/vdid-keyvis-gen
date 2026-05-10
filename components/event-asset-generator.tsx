@@ -95,13 +95,16 @@ function sanitizeTitleForFilename(raw: string): string {
   return cleaned || fallback;
 }
 
-/** `yymmdd_title_format` without extension */
+/**
+ * `yymmdd_title_format` without extension.
+ * `downloadDate` must be **today** when the user triggers download — never the event date field.
+ */
 function exportAssetBasename(
   title: string,
   formatSlug: string,
-  exportDate: Date = new Date(),
+  downloadDate: Date,
 ): string {
-  const yymmdd = format(exportDate, "yyMMdd");
+  const yymmdd = format(downloadDate, "yyMMdd");
   return `${yymmdd}_${sanitizeTitleForFilename(title)}_${formatSlug}`;
 }
 
@@ -394,7 +397,7 @@ export function EventAssetGenerator() {
     const url = canvas.toDataURL("image/png");
     const link = document.createElement("a");
     link.href = url;
-    link.download = `${exportAssetBasename(form.title, FORMAT_EXPORT_SLUG[key])}.png`;
+    link.download = `${exportAssetBasename(form.title, FORMAT_EXPORT_SLUG[key], new Date())}.png`;
     link.click();
   };
 
@@ -405,7 +408,7 @@ export function EventAssetGenerator() {
     if (!assetsReady) return;
 
     const zip = new JSZip();
-    const downloadedAt = new Date();
+    const downloadDate = new Date();
 
     // Ensure all canvases are rendered
     renderAll();
@@ -419,7 +422,7 @@ export function EventAssetGenerator() {
       if (canvas) {
         const dataUrl = canvas.toDataURL("image/png");
         const base64Data = dataUrl.split(",")[1];
-        const name = `${exportAssetBasename(form.title, FORMAT_EXPORT_SLUG[key], downloadedAt)}.png`;
+        const name = `${exportAssetBasename(form.title, FORMAT_EXPORT_SLUG[key], downloadDate)}.png`;
         zip.file(name, base64Data, { base64: true });
       }
     });
@@ -429,7 +432,7 @@ export function EventAssetGenerator() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `${exportAssetBasename(form.title, "all-formats", downloadedAt)}.zip`;
+    link.download = `${exportAssetBasename(form.title, "all-formats", downloadDate)}.zip`;
     link.click();
     URL.revokeObjectURL(url);
   };
