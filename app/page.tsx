@@ -1,20 +1,10 @@
 "use client";
 
 import { EventAssetGenerator } from "@/components/event-asset-generator";
-import { useEffect, useState } from "react";
+import { publicFile } from "@/lib/public-file";
 
 export default function Home() {
-  const [logoPath, setLogoPath] = useState("/VDID_Logo_neg.svg");
-
-  useEffect(() => {
-    // Detect basePath for GitHub Pages
-    if (typeof window !== "undefined") {
-      const path = window.location.pathname;
-      if (path.startsWith("/vdid-asset-gen")) {
-        setLogoPath("/vdid-asset-gen/VDID_Logo_neg.svg");
-      }
-    }
-  }, []);
+  const logoPath = publicFile("/VDID_Logo_neg.svg");
 
   return (
     <main className="min-h-screen p-6">

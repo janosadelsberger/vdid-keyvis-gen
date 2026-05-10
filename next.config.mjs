@@ -1,13 +1,17 @@
 /** @type {import('next').NextConfig} */
 // Check if we're building (not in dev mode)
-const isBuild = process.argv.includes('build');
+const isBuild = process.argv.includes("build");
+
+// GitHub Pages: set BASE_PATH in CI — '' for username.github.io repos, '/repo-name' for project sites.
+const basePath = process.env.BASE_PATH ?? "";
 
 const nextConfig = {
   reactStrictMode: true,
-  // Only use static export when building (not in dev mode)
-  ...(isBuild && { output: 'export' }),
-  // Only use basePath when building for GitHub Pages (not in dev)
-  basePath: isBuild ? '/vdid-asset-gen' : '',
+  ...(isBuild && { output: "export" }),
+  basePath,
+  env: {
+    NEXT_PUBLIC_BASE_PATH: basePath,
+  },
   trailingSlash: true,
   images: {
     unoptimized: true,

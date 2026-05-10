@@ -28,6 +28,19 @@ jobs:
       
       - name: Install dependencies
         run: bun install
+
+      # User/org site (owner.github.io) → site root. Project site → /repository-name/
+      - name: Set BASE_PATH for GitHub Pages
+        run: |
+          REPO_NAME="${{ github.event.repository.name }}"
+          OWNER="${{ github.repository_owner }}"
+          if [ "$REPO_NAME" = "${OWNER}.github.io" ]; then
+            echo "BASE_PATH=" >> "$GITHUB_ENV"
+            echo "GitHub Pages URL: https://${OWNER}.github.io/"
+          else
+            echo "BASE_PATH=/$REPO_NAME" >> "$GITHUB_ENV"
+            echo "GitHub Pages URL: https://${OWNER}.github.io/${REPO_NAME}/"
+          fi
       
       - name: Build
         run: bun run build

@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { DatePicker } from "@/components/ui/date-picker";
 import { TimePicker } from "@/components/ui/time-picker";
 import { Checkbox } from "@/components/ui/checkbox";
+import { publicFile } from "@/lib/public-file";
 import { cn } from "@/lib/utils";
 
 type EventFormState = {
@@ -117,26 +118,10 @@ export function EventAssetGenerator() {
     dataUrl: string;
   } | null>(null);
 
-  // Load logo once
+  // Load logo once (/public; respects Next.js basePath on GitHub Pages)
   React.useEffect(() => {
     const img = new Image();
-    // Use the negative VDID SVG logo placed in /public
-    // Detect basePath from current location for GitHub Pages
-    let basePath = '/vdid-asset-gen';
-    if (typeof window !== 'undefined') {
-      const path = window.location.pathname;
-      // If we're on GitHub Pages, extract the basePath
-      if (path.startsWith('/vdid-asset-gen')) {
-        basePath = '/vdid-asset-gen';
-      } else if (path !== '/') {
-        // If path is something like /some/path/, use it as basePath
-        basePath = path.endsWith('/') ? path.slice(0, -1) : path.split('/').slice(0, -1).join('/') || '';
-      } else {
-        // Root path, no basePath needed
-        basePath = '';
-      }
-    }
-    img.src = `${basePath}/VDID_Logo_neg.svg`;
+    img.src = publicFile("/VDID_Logo_neg.svg");
     img.onload = () => {
       logoRef.current = img;
       setLogoLoaded(true);
