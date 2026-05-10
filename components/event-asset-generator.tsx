@@ -73,6 +73,38 @@ const FORMAT_CONFIG: Record<
   },
 };
 
+/** Third segment of `yymmdd_title_<slug>.png` export filenames */
+const FORMAT_EXPORT_SLUG: Record<FormatKey, string> = {
+  websitePreview: "Website-Preview-800x800",
+  websiteHeader: "Website-Header-1920x800",
+  instagramGrid: "Instagram-Grid-1080x1350",
+  instagramStory: "Instagram-Story-1080x1920",
+  linkedinSquare: "LinkedIn-1080x1080",
+};
+
+function sanitizeTitleForFilename(raw: string): string {
+  const fallback = "event";
+  const trimmed = raw.trim();
+  if (!trimmed) return fallback;
+  const cleaned = trimmed
+    .replace(/[/\\?%*:|"<>]/g, "_")
+    .replace(/\s+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_|_$/g, "")
+    .slice(0, 80);
+  return cleaned || fallback;
+}
+
+/** `yymmdd_title_format` without extension */
+function exportAssetBasename(
+  title: string,
+  formatSlug: string,
+  exportDate: Date = new Date(),
+): string {
+  const yymmdd = format(exportDate, "yyMMdd");
+  return `${yymmdd}_${sanitizeTitleForFilename(title)}_${formatSlug}`;
+}
+
 export function EventAssetGenerator() {
   const [form, setForm] = React.useState<EventFormState>({
     eventFormat: "–",
@@ -362,7 +394,7 @@ export function EventAssetGenerator() {
     const url = canvas.toDataURL("image/png");
     const link = document.createElement("a");
     link.href = url;
-    link.download = `${key}.png`;
+    link.download = `${exportAssetBasename(form.title, FORMAT_EXPORT_SLUG[key])}.png`;
     link.click();
   };
 
@@ -373,13 +405,7 @@ export function EventAssetGenerator() {
     if (!assetsReady) return;
 
     const zip = new JSZip();
-    const formatNames: Record<FormatKey, string> = {
-      websitePreview: "Website-Preview-800x800",
-      websiteHeader: "Website-Header-1920x800",
-      instagramGrid: "Instagram-Grid-1080x1350",
-      instagramStory: "Instagram-Story-1080x1920",
-      linkedinSquare: "LinkedIn-1080x1080",
-    };
+    const downloadedAt = new Date();
 
     // Ensure all canvases are rendered
     renderAll();
@@ -393,7 +419,8 @@ export function EventAssetGenerator() {
       if (canvas) {
         const dataUrl = canvas.toDataURL("image/png");
         const base64Data = dataUrl.split(",")[1];
-        zip.file(`${formatNames[key]}.png`, base64Data, { base64: true });
+        const name = `${exportAssetBasename(form.title, FORMAT_EXPORT_SLUG[key], downloadedAt)}.png`;
+        zip.file(name, base64Data, { base64: true });
       }
     });
 
@@ -402,7 +429,7 @@ export function EventAssetGenerator() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `vdid-assets-${Date.now()}.zip`;
+    link.download = `${exportAssetBasename(form.title, "all-formats", downloadedAt)}.zip`;
     link.click();
     URL.revokeObjectURL(url);
   };
