@@ -18,13 +18,92 @@ import { cn } from "@/lib/utils";
 type EventFormState = {
   eventFormat: string;
   eventFormatCustom: string;
+  /** Hauptzeile auf allen Bildern */
   title: string;
+  /** Begleittexte (nicht auf dem Bild); Pflicht für ZIP */
+  captionWebsite: string;
+  captionInstagram: string;
+  captionLinkedIn: string;
   subtitle: string;
   date: Date | null;
   time: string;
   place: string;
   isOnline: boolean;
+  /** Pflicht: erscheint auf allen Bildern (unten), u. a. für ZIP */
+  copyright: string;
 };
+
+const INITIAL_FORM_STATE: EventFormState = {
+  eventFormat: "–",
+  eventFormatCustom: "",
+  title: "",
+  captionWebsite: "",
+  captionInstagram: "",
+  captionLinkedIn: "",
+  subtitle: "",
+  date: null,
+  time: "",
+  place: "",
+  isOnline: false,
+  copyright: "",
+};
+
+const FORM_STORAGE_KEY = "vdid-asset-gen-form-v1";
+
+type StoredFormV1 = Omit<EventFormState, "date"> & {
+  dateIso: string | null;
+};
+
+function serializeForm(form: EventFormState): string {
+  const payload: StoredFormV1 = {
+    eventFormat: form.eventFormat,
+    eventFormatCustom: form.eventFormatCustom,
+    title: form.title,
+    captionWebsite: form.captionWebsite,
+    captionInstagram: form.captionInstagram,
+    captionLinkedIn: form.captionLinkedIn,
+    subtitle: form.subtitle,
+    dateIso: form.date ? form.date.toISOString() : null,
+    time: form.time,
+    place: form.place,
+    isOnline: form.isOnline,
+    copyright: form.copyright,
+  };
+  return JSON.stringify(payload);
+}
+
+function parseStoredForm(raw: string): EventFormState | null {
+  try {
+    const o = JSON.parse(raw) as Partial<StoredFormV1>;
+    if (typeof o !== "object" || o === null) return null;
+    const dateRaw = o.dateIso;
+    let date: Date | null = null;
+    if (typeof dateRaw === "string" && dateRaw.length > 0) {
+      const d = new Date(dateRaw);
+      if (!Number.isNaN(d.getTime())) date = d;
+    }
+    return {
+      eventFormat: typeof o.eventFormat === "string" ? o.eventFormat : "–",
+      eventFormatCustom:
+        typeof o.eventFormatCustom === "string" ? o.eventFormatCustom : "",
+      title: typeof o.title === "string" ? o.title : "",
+      captionWebsite:
+        typeof o.captionWebsite === "string" ? o.captionWebsite : "",
+      captionInstagram:
+        typeof o.captionInstagram === "string" ? o.captionInstagram : "",
+      captionLinkedIn:
+        typeof o.captionLinkedIn === "string" ? o.captionLinkedIn : "",
+      subtitle: typeof o.subtitle === "string" ? o.subtitle : "",
+      date,
+      time: typeof o.time === "string" ? o.time : "",
+      place: typeof o.place === "string" ? o.place : "",
+      isOnline: typeof o.isOnline === "boolean" ? o.isOnline : false,
+      copyright: typeof o.copyright === "string" ? o.copyright : "",
+    };
+  } catch {
+    return null;
+  }
+}
 
 type FocalPoint = { x: number; y: number };
 
@@ -108,18 +187,93 @@ function exportAssetBasename(
   return `${yymmdd}_${sanitizeTitleForFilename(title)}_${formatSlug}`;
 }
 
+function RequiredMark() {
+  return (
+    <span className="text-red-600" aria-hidden>
+      {" "}
+      *
+    </span>
+  );
+}
+
+function InfoTip({ text }: { text: string }) {
+  return (
+    <span className="group relative inline-flex">
+      <button
+        type="button"
+        aria-label="Hinweis anzeigen"
+        title={text}
+        className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border border-slate-300 bg-white text-[10px] font-semibold leading-none text-slate-600 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-vdidBlue focus-visible:ring-offset-1"
+        onClick={(e) => e.preventDefault()}
+      >
+        i
+      </button>
+      <span
+        role="tooltip"
+        className="pointer-events-none invisible absolute left-0 top-full z-20 mt-1 w-72 -translate-x-2 rounded-md border border-slate-200 bg-white p-2 text-xs leading-snug text-slate-700 shadow-md group-hover:visible group-focus-within:visible"
+      >
+        {text}
+      </span>
+    </span>
+  );
+}
+
+function FieldHeader({
+  htmlFor,
+  label,
+  required,
+  tip,
+}: {
+  htmlFor: string;
+  label: string;
+  required?: boolean;
+  tip?: string;
+}) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <Label htmlFor={htmlFor}>
+        {label}
+        {required && <RequiredMark />}
+      </Label>
+      {tip && <InfoTip text={tip} />}
+    </div>
+  );
+}
+
+function CharCount({
+  value,
+  softLimit,
+}: {
+  value: string;
+  softLimit: number;
+}) {
+  const len = value.length;
+  const over = len > softLimit;
+  return (
+    <p
+      className={cn(
+        "text-xs tabular-nums",
+        over ? "font-medium text-red-700" : "text-slate-500",
+      )}
+      aria-live="polite"
+    >
+      {len} / {softLimit} Zeichen
+      {over && " — über Empfehlung"}
+    </p>
+  );
+}
+
 export function EventAssetGenerator() {
-  const [form, setForm] = React.useState<EventFormState>({
-    eventFormat: "–",
-    eventFormatCustom: "",
-    title: "",
-    subtitle: "",
-    date: null,
-    time: "",
-    place: "",
-    isOnline: false,
-  });
+  const [form, setForm] =
+    React.useState<EventFormState>(INITIAL_FORM_STATE);
+  const [formHydrated, setFormHydrated] = React.useState(false);
   const [logoLoaded, setLogoLoaded] = React.useState(false);
+  /** Set when loading fails so we can show the resolved URL (local vs. deployed). */
+  const [logoLoadErrorUrl, setLogoLoadErrorUrl] = React.useState<string | null>(
+    null,
+  );
+  /** Nach Klick auf ZIP/PNG, wenn noch Pflichtfelder fehlen */
+  const [exportHint, setExportHint] = React.useState<string | null>(null);
   const logoRef = React.useRef<HTMLImageElement | null>(null);
   const canvasRefs = React.useRef<
     Partial<Record<FormatKey, HTMLCanvasElement | null>>
@@ -153,18 +307,44 @@ export function EventAssetGenerator() {
     dataUrl: string;
   } | null>(null);
 
-  // Load logo once (/public; respects Next.js basePath on GitHub Pages)
   React.useEffect(() => {
+    try {
+      const raw = localStorage.getItem(FORM_STORAGE_KEY);
+      if (raw) {
+        const parsed = parseStoredForm(raw);
+        if (parsed) setForm(parsed);
+      }
+    } catch {
+      /* ignore */
+    }
+    setFormHydrated(true);
+  }, []);
+
+  React.useEffect(() => {
+    if (!formHydrated || typeof window === "undefined") return;
+    try {
+      localStorage.setItem(FORM_STORAGE_KEY, serializeForm(form));
+    } catch {
+      /* quota / private mode */
+    }
+  }, [form, formHydrated]);
+
+  // Load logo once from /public (URL resolves via publicFile — works with basePath)
+  React.useEffect(() => {
+    const url = publicFile("/VDID_Logo_neg.svg");
+    setLogoLoadErrorUrl(null);
     const img = new Image();
-    img.src = publicFile("/VDID_Logo_neg.svg");
     img.onload = () => {
       logoRef.current = img;
       setLogoLoaded(true);
+      setLogoLoadErrorUrl(null);
     };
     img.onerror = () => {
-      console.error('Failed to load logo from:', img.src);
+      console.error("Failed to load logo from:", url);
       setLogoLoaded(false);
+      setLogoLoadErrorUrl(url);
     };
+    img.src = url;
   }, []);
 
   React.useEffect(() => {
@@ -339,7 +519,15 @@ export function EventAssetGenerator() {
   }, [focalPoint, previewNaturalSize, previewObjectUrl]);
 
   const handleChangeText = (
-    field: "title" | "subtitle" | "time" | "place",
+    field:
+      | "title"
+      | "subtitle"
+      | "time"
+      | "place"
+      | "captionWebsite"
+      | "captionInstagram"
+      | "captionLinkedIn"
+      | "copyright",
   ): React.ChangeEventHandler<HTMLInputElement | HTMLTextAreaElement> => {
     return (e) => {
       setForm((prev) => ({ ...prev, [field]: e.target.value }));
@@ -404,9 +592,49 @@ export function EventAssetGenerator() {
   const assetsReady =
     logoLoaded && backgroundLoadState !== "loading";
 
-  const handleDownloadAll = async () => {
-    if (!assetsReady) return;
+  const zipTextsReady =
+    form.title.trim().length > 0 &&
+    form.captionWebsite.trim().length > 0 &&
+    form.captionInstagram.trim().length > 0 &&
+    form.captionLinkedIn.trim().length > 0 &&
+    form.copyright.trim().length > 0;
 
+  const zipDownloadReady = assetsReady && zipTextsReady;
+
+  React.useEffect(() => {
+    setExportHint(null);
+  }, [form, logoLoaded, backgroundLoadState]);
+
+  const collectZipMissing = React.useCallback((): string[] => {
+    const missing: string[] = [];
+    if (!logoLoaded) missing.push("Logo");
+    if (backgroundLoadState === "loading") missing.push("Hintergrund lädt noch");
+    if (!form.title.trim()) missing.push("Titel (im Bild)");
+    if (!form.copyright.trim()) missing.push("Copyright (Bild)");
+    if (!form.captionWebsite.trim()) missing.push("Caption Website");
+    if (!form.captionInstagram.trim()) missing.push("Caption Instagram");
+    if (!form.captionLinkedIn.trim()) missing.push("Caption LinkedIn");
+    return missing;
+  }, [
+    logoLoaded,
+    backgroundLoadState,
+    form.title,
+    form.copyright,
+    form.captionWebsite,
+    form.captionInstagram,
+    form.captionLinkedIn,
+  ]);
+
+  const collectPngMissing = React.useCallback((): string[] => {
+    const missing: string[] = [];
+    if (!logoLoaded) missing.push("Logo");
+    if (backgroundLoadState === "loading") missing.push("Hintergrund lädt noch");
+    if (!form.title.trim()) missing.push("Titel (im Bild)");
+    if (!form.copyright.trim()) missing.push("Copyright (Bild)");
+    return missing;
+  }, [logoLoaded, backgroundLoadState, form.title, form.copyright]);
+
+  const handleDownloadAll = async () => {
     const zip = new JSZip();
     const downloadDate = new Date();
 
@@ -416,6 +644,12 @@ export function EventAssetGenerator() {
     // Wait a bit for canvases to render
     await new Promise((resolve) => setTimeout(resolve, 100));
 
+    const pngArchiveEntries: {
+      formatKey: FormatKey;
+      label: string;
+      filename: string;
+    }[] = [];
+
     // Add each canvas as a PNG to the zip
     (Object.keys(FORMAT_CONFIG) as FormatKey[]).forEach((key) => {
       const canvas = canvasRefs.current[key];
@@ -423,38 +657,194 @@ export function EventAssetGenerator() {
         const dataUrl = canvas.toDataURL("image/png");
         const base64Data = dataUrl.split(",")[1];
         const name = `${exportAssetBasename(form.title, FORMAT_EXPORT_SLUG[key], downloadDate)}.png`;
+        pngArchiveEntries.push({
+          formatKey: key,
+          label: FORMAT_CONFIG[key].label,
+          filename: name,
+        });
         zip.file(name, base64Data, { base64: true });
       }
     });
+
+    const captionExports: {
+      slug: string;
+      text: string;
+      channel: "website" | "instagram" | "linkedin";
+    }[] = [
+      {
+        slug: "Caption-Website",
+        text: form.captionWebsite.trim(),
+        channel: "website",
+      },
+      {
+        slug: "Caption-Instagram",
+        text: form.captionInstagram.trim(),
+        channel: "instagram",
+      },
+      {
+        slug: "Caption-LinkedIn",
+        text: form.captionLinkedIn.trim(),
+        channel: "linkedin",
+      },
+    ];
+
+    const captionTxtArchiveEntries: {
+      channel: string;
+      slug: string;
+      filename: string;
+    }[] = [];
+
+    for (const item of captionExports) {
+      const txtName = `${exportAssetBasename(form.title, item.slug, downloadDate)}.txt`;
+      captionTxtArchiveEntries.push({
+        channel: item.channel,
+        slug: item.slug,
+        filename: txtName,
+      });
+      zip.file(txtName, item.text);
+    }
+
+    const zipBasename = exportAssetBasename(
+      form.title,
+      "all-formats",
+      downloadDate,
+    );
+    const zipDownloadFilename = `${zipBasename}.zip`;
+    const jsonBasename = exportAssetBasename(
+      form.title,
+      "asset-export",
+      downloadDate,
+    );
+    const jsonFilename = `${jsonBasename}.json`;
+
+    const exportManifest = {
+      export: {
+        generatedAt: downloadDate.toISOString(),
+        zipArchiveFilename: zipDownloadFilename,
+        manifestFilename: jsonFilename,
+      },
+      texts: {
+        titleImage: form.title,
+        subtitle: form.subtitle,
+        copyright: form.copyright,
+        eventFormat: form.eventFormat,
+        eventFormatCustom: form.eventFormatCustom,
+        date: form.date ? form.date.toISOString() : null,
+        time: form.time,
+        place: form.place,
+        isOnline: form.isOnline,
+        captions: {
+          website: form.captionWebsite,
+          instagram: form.captionInstagram,
+          linkedin: form.captionLinkedIn,
+        },
+      },
+      filesInArchive: {
+        pngImages: pngArchiveEntries.map((e) => ({
+          formatKey: e.formatKey,
+          label: e.label,
+          filename: e.filename,
+        })),
+        captionTextFiles: captionTxtArchiveEntries.map((e) => ({
+          channel: e.channel,
+          filename: e.filename,
+        })),
+      },
+    };
+
+    zip.file(
+      jsonFilename,
+      JSON.stringify(exportManifest, null, 2),
+    );
 
     // Generate and download the zip file
     const blob = await zip.generateAsync({ type: "blob" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `${exportAssetBasename(form.title, "all-formats", downloadDate)}.zip`;
+    link.download = zipDownloadFilename;
     link.click();
     URL.revokeObjectURL(url);
+    try {
+      localStorage.removeItem(FORM_STORAGE_KEY);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const handleResetForm = () => {
+    setForm(INITIAL_FORM_STATE);
+    clearBackgroundImage();
+    setOverlayEnabled(false);
+    setOverlayOpacity(0.35);
+    setExportHint(null);
+    try {
+      localStorage.removeItem(FORM_STORAGE_KEY);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const handleZipButtonClick = () => {
+    const missing = collectZipMissing();
+    if (missing.length > 0) {
+      setExportHint(`Es fehlen noch: ${missing.join(", ")}.`);
+      return;
+    }
+    setExportHint(null);
+    void handleDownloadAll();
+  };
+
+  const handlePngButtonClick = (key: FormatKey) => {
+    const missing = collectPngMissing();
+    if (missing.length > 0) {
+      setExportHint(`Für PNG-Download fehlt: ${missing.join(", ")}.`);
+      return;
+    }
+    setExportHint(null);
+    handleDownload(key);
   };
 
   return (
     <>
       <div className="space-y-6">
       <Card>
+        <CardHeader>
+          <CardTitle>Event &amp; Grafik</CardTitle>
+        </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Left Column */}
             <div className="space-y-4">
-              <div className="space-y-1">
-                <Label htmlFor="title">Titel *</Label>
-                <Textarea
-                  id="title"
-                  value={form.title}
-                  onChange={handleChangeText("title")}
-                  placeholder="VDID Event"
-                  rows={2}
-                  className="resize-none"
-                />
+              <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/80 p-3">
+                <div className="space-y-1">
+                  <Label htmlFor="title">
+                    Titel (im Bild)
+                    <RequiredMark />
+                  </Label>
+                  <Textarea
+                    id="title"
+                    value={form.title}
+                    onChange={handleChangeText("title")}
+                    placeholder="erscheint als Hauptzeile auf allen Formaten"
+                    rows={2}
+                    className="resize-none bg-white"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="copyright">
+                    Copyright (Bild)
+                    <RequiredMark />
+                  </Label>
+                  <Textarea
+                    id="copyright"
+                    value={form.copyright}
+                    onChange={handleChangeText("copyright")}
+                    placeholder="z. B. © Name · Foto: …"
+                    rows={2}
+                    className="resize-none bg-white"
+                  />
+                </div>
               </div>
               <div className="space-y-1">
                 <Label htmlFor="subtitle">Unterzeile</Label>
@@ -681,6 +1071,75 @@ export function EventAssetGenerator() {
         </CardContent>
       </Card>
 
+      <Card>
+        <CardHeader className="flex-col items-stretch gap-1">
+          <CardTitle>Captions</CardTitle>
+          <p className="text-sm font-normal leading-snug text-slate-600">
+            Begleittexte für die Kanäle — nicht auf der Grafik, nur für
+            Veröffentlichung und ZIP (.txt).
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="space-y-1">
+              <FieldHeader
+                htmlFor="captionWebsite"
+                label="Caption Website"
+                required
+                tip="Vollständiger Begleittext für Web / CMS (z. B. Teaser / Lede). Hook in die ersten ~155–160 Zeichen, damit der Suchergebnis-Snippet nicht abgeschnitten wird. Richtwert insgesamt ~500 Zeichen."
+              />
+              <Textarea
+                id="captionWebsite"
+                value={form.captionWebsite}
+                onChange={handleChangeText("captionWebsite")}
+                placeholder="Begleittext für Web / CMS"
+                rows={5}
+                className="resize-y min-h-[100px]"
+              />
+              <CharCount value={form.captionWebsite} softLimit={500} />
+            </div>
+            <div className="space-y-1">
+              <FieldHeader
+                htmlFor="captionInstagram"
+                label="Caption Instagram"
+                required
+                tip="Hook in die ersten ~125 Zeichen, da Instagram danach „mehr…“ einblendet — anschließend folgt der eigentliche Content. Hashtags ans Ende. Plattform-Limit insgesamt 2.200 Zeichen."
+              />
+              <Textarea
+                id="captionInstagram"
+                value={form.captionInstagram}
+                onChange={handleChangeText("captionInstagram")}
+                placeholder="Post-Text / Bildunterschrift"
+                rows={5}
+                className="resize-y min-h-[100px]"
+              />
+              <CharCount value={form.captionInstagram} softLimit={2200} />
+            </div>
+            <div className="space-y-1">
+              <FieldHeader
+                htmlFor="captionLinkedIn"
+                label="Caption LinkedIn"
+                required
+                tip="Hook in die ersten ~210 Zeichen (vor „…mehr anzeigen“), danach folgt der eigentliche Beitragstext. Max. 3 relevante Hashtags. Plattform-Limit insgesamt 3.000 Zeichen."
+              />
+              <Textarea
+                id="captionLinkedIn"
+                value={form.captionLinkedIn}
+                onChange={handleChangeText("captionLinkedIn")}
+                placeholder="Beitragstext für LinkedIn"
+                rows={5}
+                className="resize-y min-h-[100px]"
+              />
+              <CharCount value={form.captionLinkedIn} softLimit={3000} />
+            </div>
+          </div>
+          <p className="text-xs text-slate-500">
+            Pflicht für den ZIP-Download; die drei Texte werden zusätzlich als
+            separate .txt-Dateien ins Archiv gelegt.
+          </p>
+        </CardContent>
+      </Card>
+
       <div className="space-y-2">
         <p className="text-xs text-slate-500">
           Vorschau anklicken für große Ansicht (volle Exportauflösung).
@@ -688,6 +1147,10 @@ export function EventAssetGenerator() {
         <div className="grid gap-4 lg:grid-cols-2">
         {(Object.keys(FORMAT_CONFIG) as FormatKey[]).map((key) => {
           const cfg = FORMAT_CONFIG[key];
+          const pngReady =
+            assetsReady &&
+            form.title.trim().length > 0 &&
+            form.copyright.trim().length > 0;
           return (
             <Card key={key}>
               <CardHeader>
@@ -695,8 +1158,13 @@ export function EventAssetGenerator() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => handleDownload(key)}
-                  disabled={!assetsReady}
+                  type="button"
+                  onClick={() => handlePngButtonClick(key)}
+                  aria-disabled={!pngReady}
+                  className={cn(
+                    !pngReady &&
+                      "opacity-50 saturate-50 cursor-pointer hover:opacity-60",
+                  )}
                 >
                   PNG herunterladen
                 </Button>
@@ -733,13 +1201,41 @@ export function EventAssetGenerator() {
         </div>
 
         <div className="border-t border-slate-200 pt-6">
-          <Button onClick={handleDownloadAll} disabled={!assetsReady}>
-            Alle Assets als ZIP herunterladen
-          </Button>
-          {!logoLoaded && (
-            <p className="mt-2 text-xs text-slate-500">
-              Logo wird geladen… Stelle sicher, dass{" "}
-              <code>public/VDID_Logo_neg.svg</code> existiert.
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              type="button"
+              onClick={handleZipButtonClick}
+              aria-disabled={!zipDownloadReady}
+              className={cn(
+                !zipDownloadReady &&
+                  "opacity-50 saturate-50 cursor-pointer hover:opacity-60",
+              )}
+            >
+              Alle Assets als ZIP herunterladen
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleResetForm}
+            >
+              Zurücksetzen
+            </Button>
+          </div>
+          {exportHint && (
+            <p className="mt-2 text-sm text-red-700" role="status">
+              {exportHint}
+            </p>
+          )}
+          {!logoLoaded && !logoLoadErrorUrl && (
+            <p className="mt-2 text-xs text-slate-500">Logo wird geladen…</p>
+          )}
+          {logoLoadErrorUrl && (
+            <p className="mt-2 text-xs text-red-700">
+              Logo konnte nicht geladen werden:{" "}
+              <code className="break-all">{logoLoadErrorUrl}</code>. Im Repo muss{" "}
+              <code>public/VDID_Logo_neg.svg</code> existieren; nach dem Export liegt
+              die Datei neben der index.html (relativer Pfad{" "}
+              <code>./VDID_Logo_neg.svg</code>).
             </p>
           )}
         </div>
@@ -1017,29 +1513,79 @@ function drawFormat(
     y += lineHeightTitle;
   }
 
-  if (!cfg.includeMeta) {
-    return;
+  if (cfg.includeMeta) {
+    // Draw Subtitle
+    if (form.subtitle && subtitleLines.length > 0) {
+      if (titleLines.length > 0) {
+        y += spacingAfterTitle;
+      }
+      ctx.font = `400 ${subtitleFontSize}px Roboto, system-ui, sans-serif`;
+      for (const line of subtitleLines) {
+        ctx.fillText(line, marginX, y);
+        y += lineHeightSubtitle;
+      }
+    }
+
+    // Draw Date & time line
+    if (metaParts.length > 0) {
+      y += spacingAfterSubtitle;
+      const metaText = metaParts.join(" • ");
+      ctx.font = `400 ${metaFontSize}px Roboto, system-ui, sans-serif`;
+      ctx.fillText(metaText, marginX, y);
+    }
   }
 
-  // Draw Subtitle
-  if (form.subtitle && subtitleLines.length > 0) {
-    if (titleLines.length > 0) {
-      y += spacingAfterTitle;
-    }
-    ctx.font = `400 ${subtitleFontSize}px Roboto, system-ui, sans-serif`;
-    for (const line of subtitleLines) {
-      ctx.fillText(line, marginX, y);
-      y += lineHeightSubtitle;
-    }
-  }
+  drawCopyrightOnCanvas(ctx, width, height, form.copyright, marginX, marginY);
+}
 
-  // Draw Date & time line
-  if (metaParts.length > 0) {
-    y += spacingAfterSubtitle;
-    const metaText = metaParts.join(" • ");
-    ctx.font = `400 ${metaFontSize}px Roboto, system-ui, sans-serif`;
-    ctx.fillText(metaText, marginX, y);
+/** Einheitliches © vor dem Rest; vorhandenes © am Anfang nicht verdoppeln. */
+function copyrightDisplayText(raw: string): string {
+  const t = raw.trim();
+  if (!t) return "";
+  if (/^©[\s\u00A0]*/u.test(t)) return t;
+  return `© ${t}`;
+}
+
+/** Vertikal am rechten Rand, unten ausgerichtet (nach oben entlang), halbtransparent. */
+function drawCopyrightOnCanvas(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  text: string,
+  marginX: number,
+  marginY: number,
+) {
+  const trimmed = text.trim();
+  if (!trimmed) return;
+
+  const display = copyrightDisplayText(trimmed);
+  const marginRight = Math.max(10, marginX * 0.45);
+  const marginBottom = Math.max(12, marginY * 0.4);
+  const maxSpan = Math.max(40, height - marginY * 2);
+
+  ctx.save();
+  ctx.fillStyle = "rgba(255,255,255,0.5)";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  let fontSize = Math.max(10, Math.min(width, height) * 0.017);
+  const minSize = 8;
+  while (fontSize >= minSize) {
+    ctx.font = `400 ${fontSize}px Roboto, system-ui, sans-serif`;
+    if (ctx.measureText(display).width <= maxSpan) break;
+    fontSize -= 0.5;
   }
+  ctx.font = `400 ${fontSize}px Roboto, system-ui, sans-serif`;
+
+  // Nach -90° entspricht die Textbreite der Höhe entlang der Kante; unten ausrichten
+  const verticalExtent = ctx.measureText(display).width;
+  const cx = width - marginRight;
+  const cy = height - marginBottom - verticalExtent / 2;
+
+  ctx.translate(cx, cy);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillText(display, 0, 0);
+  ctx.restore();
 }
 
 function wrapText(

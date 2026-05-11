@@ -1,9 +1,13 @@
 /**
- * URL for a file in `/public` when the app uses Next.js `basePath`
- * (e.g. GitHub Pages project sites at /repo-name/).
+ * URL for a file in `/public`.
+ *
+ * Uses a path **relative to the current page** (`./…`), so it works:
+ * - locally (`/` → `/VDID_Logo_neg.svg`)
+ * - on GitHub Pages with `basePath` (`/repo/` → `/repo/VDID_Logo_neg.svg`)
+ *
+ * Avoids relying on `NEXT_PUBLIC_BASE_PATH` being inlined identically everywhere.
  */
 export function publicFile(path: string): string {
-  const base = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
-  const p = path.startsWith("/") ? path : `/${path}`;
-  return `${base}${p}`;
+  const clean = path.replace(/^\//, "");
+  return `./${clean}`;
 }
