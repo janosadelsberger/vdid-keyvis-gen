@@ -24,7 +24,7 @@ export default function Home() {
         {/* Main Content - Centered */}
         <div className="flex-1 flex justify-center">
           <div className="w-full max-w-6xl">
-            <div className="bg-white rounded-xl shadow-lg p-6">
+            <div className="bg-white rounded-xl shadow-lg p-6 leading-relaxed text-slate-900 antialiased">
               <EventAssetGenerator />
             </div>
           </div>

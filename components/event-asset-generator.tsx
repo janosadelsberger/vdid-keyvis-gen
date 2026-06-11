@@ -114,12 +114,21 @@ type FormatKey =
   | "websiteHeader"
   | "instagramGrid"
   | "instagramStory"
-  | "linkedinSquare";
+  | "linkedinSquare"
+  | "linkedinEvent"
+  | "eventbriteHeader"
+  | "zoomBackground";
 
-const FORMAT_CONFIG: Record<
-  FormatKey,
-  { label: string; width: number; height: number; includeMeta: boolean }
-> = {
+type FormatCanvasConfig = {
+  label: string;
+  width: number;
+  height: number;
+  includeMeta: boolean;
+  /** Fraction of canvas height: extra top inset for platform UI (e.g. Instagram Story). */
+  topUiSafeInsetRatio?: number;
+};
+
+const FORMAT_CONFIG: Record<FormatKey, FormatCanvasConfig> = {
   websitePreview: {
     label: "Website Preview 800×800",
     width: 800,
@@ -143,6 +152,8 @@ const FORMAT_CONFIG: Record<
     width: 1080,
     height: 1920,
     includeMeta: true,
+    /** Safe zone below profile / close UI (~12–14% of 9:16). */
+    topUiSafeInsetRatio: 0.13,
   },
   linkedinSquare: {
     label: "LinkedIn 1080×1080",
@@ -150,7 +161,30 @@ const FORMAT_CONFIG: Record<
     height: 1080,
     includeMeta: true,
   },
+  linkedinEvent: {
+    label: "LinkedIn Event 1600×900",
+    width: 1600,
+    height: 900,
+    includeMeta: true,
+  },
+  eventbriteHeader: {
+    label: "Eventbrite Header 2160×1080",
+    width: 2160,
+    height: 1080,
+    includeMeta: true,
+  },
+  zoomBackground: {
+    label: "Zoom Background 1920×1080",
+    width: 1920,
+    height: 1080,
+    includeMeta: false,
+  },
 };
+
+/** Matches `viewBox` height in `public/VDID_Logo_neg.svg`. */
+const VDID_LOGO_VIEWBOX_SIZE = 200;
+/** White VDID mark square in SVG units (top-left of asset). */
+const VDID_LOGO_MARK_SQUARE = 100;
 
 /** Third segment of `yymmdd_title_<slug>.png` export filenames */
 const FORMAT_EXPORT_SLUG: Record<FormatKey, string> = {
@@ -159,6 +193,9 @@ const FORMAT_EXPORT_SLUG: Record<FormatKey, string> = {
   instagramGrid: "Instagram-Grid-1080x1350",
   instagramStory: "Instagram-Story-1080x1920",
   linkedinSquare: "LinkedIn-1080x1080",
+  linkedinEvent: "LinkedIn-Event-1600x900",
+  eventbriteHeader: "Eventbrite-Header-2160x1080",
+  zoomBackground: "Zoom-Background-1920x1080",
 };
 
 function sanitizeTitleForFilename(raw: string): string {
@@ -196,38 +233,308 @@ function RequiredMark() {
   );
 }
 
-function InfoTip({ text }: { text: string }) {
+/** Research-oriented targets for reach / engagement — not platform hard caps. */
+type CaptionTipsPlatform = "website" | "instagram" | "linkedin";
+
+/**
+ * Referenzlänge eines mehrabsätzigen Website-Begleittextes (VDID-Beispielkorpus,
+ * inkl. Zeilenumbrüche zwischen Absätzen), **auf 1700 Zeichen gerundet** —
+ * Soft-Limit im UI und im LLM-Prompt.
+ */
+const WEBSITE_REFERENCE_CONTEXT_CHAR_COUNT = 1700;
+
+const CAPTION_SWEET_SPOT: Record<CaptionTipsPlatform, number> = {
+  /** Ausführlicher Kontextblock orientiert am Referenzbeispiel (~1700 Zeichen); Snippets separat kürzer. */
+  website: WEBSITE_REFERENCE_CONTEXT_CHAR_COUNT,
+  /** Feed / carousel engagement band often cited ~300–500 chars; midpoint as guideline. */
+  instagram: 400,
+  /** Long-form LinkedIn posts: many benchmarks peak ~1200–1600 chars. */
+  linkedin: 1400,
+};
+
+const CAPTION_PERFORMANCE_COPY: Record<
+  CaptionTipsPlatform,
+  { title: string; tips: string[] }
+> = {
+  website: {
+    title: "Website",
+    tips: [
+      "Nutzen und Keyword natürlich an den Anfang; aktive Formulierung, klarer Mehrwert.",
+      "Text und Suchintention zur Seite passend halten — kein Keyword-Stuffing.",
+      "Handlungsaufforderung nur, wenn sie echten Mehrwert hat.",
+      "Bei längeren Texten: ersten Satz so schreiben, dass er auch allein als Teaser funktioniert.",
+      "Genug Kontext statt nackter Schlagworte — sonst schreibt Google den Snippet oft neu.",
+    ],
+  },
+  instagram: {
+    title: "Instagram",
+    tips: [
+      "Erste Zeile = Hook (Stop-Scrolling): Nutzen, Neugier oder klare Aussage.",
+      "Hashtags ans Ende; wenige, passende — kein Spam-Block.",
+      "Zeilenumbrüche und kurze Absätze für Lesbarkeit und Verweildauer.",
+      "Keine Links in der Caption wenn möglich: Link in Bio, Sticker (Stories) oder ersten Kommentar (anpinnen).",
+      "Frage oder klare Meinung für Kommentare — nicht nur Emojis ohne Inhalt.",
+      "Ton zur Marke halten; Wiederholungen vermeiden.",
+    ],
+  },
+  linkedin: {
+    title: "LinkedIn",
+    tips: [
+      "Erste Zeilen = Hook: konkretes Problem, klare These oder greifbare Zahl.",
+      "Struktur mit Absätzen und Leerzeilen; keine Romane — gut scannbar halten.",
+      "Maximal wenige, sehr relevante Hashtags.",
+      "Externe Links nicht im Fließtext: Link in den ersten Kommentar und im Post darauf hinweisen.",
+      "Kommentare einladen (Frage oder kontroverse These — professionell).",
+      "Native Medien (PDF, mehrere Bilder) nur wenn sie den Inhalt echt tragen.",
+    ],
+  },
+};
+
+/**
+ * Kontext zum Verband für den kopierbaren LLM-Prompt (Captions).
+ * Kurz gefasst: Rolle, Schwerpunkte, Tonalität — ohne Anspruch auf Vollständigkeit.
+ */
+const VDID_ORG_DESCRIPTION_FOR_LLM = `Der VDID — Verband der Industrie Designerinnen und Designer e. V. — ist der Berufsverband für Industrie- und Produktdesign in Deutschland. Er vertritt die beruflichen und fachpolitischen Interessen von Industrie-Designerinnen und -designern, stärkt den Austausch innerhalb der Community und mit Partnern aus Wirtschaft, Wissenschaft und Öffentlichkeit und macht die Rolle von Design für Innovation, Qualität und gesellschaftliche Entwicklung sichtbar.
+
+Formate wie »Design.Wissen.Diskurs.« oder »Insight Update« sowie regionale und überregionale Events vernetzen die Szene und transportieren Designthemen in die Öffentlichkeit.
+
+Für Begleittexte gilt: sachlich-präzise und zugänglich; professionell ohne Marketing-Pathos; die gestalterische Expertise der Community würdigen; inklusive und respektvolle Ansprache bevorzugen.`;
+
+/**
+ * Kein konkretes Event — beschreibt **Umfang, erzählerische Tiefe und Bausteine**
+ * eines Website-Kontexts, die sich auf beliebige VDID-Themen übertragen lassen.
+ */
+const WEBSITE_LLM_CONTEXT_STRUCTURE_BLUEPRINT = `Es geht nicht um eine feste Veranstaltung, sondern um eine **übertragbare Vorlage**: Welche Länge und welcher Aufbau sind für einen narrativen Kontextblock zu Website-Begleittexten (CMS, Landingpage, Meta-Einbettung) sinnvoll — unabhängig von Datum, Stadt oder Formatname.
+
+### Zielumfang
+- Mehrere **kurze Absätze** statt einer einzelnen Zeile; ein nachvollziehbarer **Roter Faden**.
+- **Zeichenorientierung:** ausführlicher Fließtext-Kontext etwa **${WEBSITE_REFERENCE_CONTEXT_CHAR_COUNT} Zeichen** (Referenz: VDID-Beispieltext mit Absatzumbrüchen). Liegt der Stoff darunter, ist das in Ordnung; liegt er klar darüber, Struktur und Redundanz prüfen. **Meta-Titel / SERP-Snippet** sind oft viel kürzer (~150–160 sichtbar) — ggf. als **separate**, gekürzte Variante planen, nicht als alleiniges Zeichenziel für den Haupttext.
+
+### Bausteine (Reihenfolge nach Bedarf anpassen)
+1. **Einstieg / Rahmen**: Was steht an — übergeordnete Initiative, Region, Jahr oder gesellschaftlicher bzw. fachlicher Bezug.
+2. **Relevanz / Umfeld**: Warum es für die Zielgruppe zählt; Größenordnung von Programm, Partnern oder Reichweite — nur mit vom Nutzer gelieferten oder bestätigten Angaben.
+3. **Rolle des VDID**: Konkrete Beteiligung (Format, Kooperation, inhaltlicher Schwerpunkt); ohne Übertreibung.
+4. **Kernbotschaft / Zeitraum**: Dauer, Leitidee oder Programmtitel in einem prägnanten Satz.
+5. **Ablauf** (falls sinnvoll): nach Tagen, Tracks oder Themenblöcken — knapp und scannbar.
+6. **Ort & Zeit**: Veranstaltungsort(e), Datum oder -spanne, wenn relevant.
+7. **Handlungsaufforderung**: z. B. Save-the-Date, Merken, Teilen — klar, nicht aufdringlich.
+8. **Verweise**: offizielle Websites, Kalender, Registrierung — nur mit korrekten URLs aus Nutzerangaben.
+
+### Arbeitsweise für das Modell
+- **Keine erfundenen** Zahlen, Namen oder Zitate; fehlende Fakten beim Nutzer nachfragen oder als Lücke markieren.
+- **Ton**: professionell, einladend, sachlich — zur VDID-Marke passend (siehe Kurzprofil oben).`;
+
+/** Kurzer Kontext zur Soft-Limit-Zahl für den LLM-Prompt. */
+const PLATFORM_LENGTH_GUIDANCE: Record<CaptionTipsPlatform, string> = {
+  website: `Referenzumfang ausführlicher Website-Begleittexte ca. ${WEBSITE_REFERENCE_CONTEXT_CHAR_COUNT} Zeichen (VDID-Beispielkorpus, inkl. Absatzumbrüche). SERP/Meta-Snippets sind kurz (~150–160 sichtbar) — bei Bedarf zusätzlich kondensieren.`,
+  instagram:
+    "Typische Bandbreite für Feed und Karussell — oft genanntes Engagement-Fenster etwa 300–500 Zeichen; der Wert unten ist eine mittlere Orientierung.",
+  linkedin:
+    "Typische Bandbreite für längere Fachposts — viele Benchmarks für starkes Engagement bei etwa 1200–1600 Zeichen.",
+};
+
+function blankAsUnsetForPrompt(s: string): string {
+  const t = s.trim();
+  return t.length > 0 ? t : "*(nicht angegeben)*";
+}
+
+function captionDraftBlock(label: string, text: string): string {
+  const t = text.trim();
+  if (!t) return `**${label}**\n  *(noch leer)*`;
+  const indented = text.split("\n").map((line) => `  ${line}`).join("\n");
+  return `**${label}**\n${indented}`;
+}
+
+/** Alle Formularfelder für LLM-Prompts (Markdown). */
+function formatEventFormForLlmPrompt(form: EventFormState): string {
+  const eventFormat =
+    form.eventFormat === "other"
+      ? blankAsUnsetForPrompt(form.eventFormatCustom)
+      : form.eventFormat === "–"
+        ? "*(nicht gewählt)*"
+        : form.eventFormat;
+
+  return [
+    `- **Eventformat:** ${eventFormat}`,
+    `- **Titel (Grafik):** ${blankAsUnsetForPrompt(form.title)}`,
+    `- **Unterzeile:** ${blankAsUnsetForPrompt(form.subtitle)}`,
+    `- **Datum:** ${form.date ? format(form.date, "dd.MM.yyyy") : "*(nicht angegeben)*"}`,
+    `- **Uhrzeit:** ${blankAsUnsetForPrompt(form.time)}`,
+    `- **Online-Veranstaltung:** ${form.isOnline ? "Ja" : "Nein"}`,
+    `- **Ort:** ${blankAsUnsetForPrompt(form.place)}`,
+    `- **Copyright (Grafik):** ${blankAsUnsetForPrompt(form.copyright)}`,
+    "",
+    captionDraftBlock("Caption-Entwurf Website", form.captionWebsite),
+    "",
+    captionDraftBlock("Caption-Entwurf Instagram", form.captionInstagram),
+    "",
+    captionDraftBlock("Caption-Entwurf LinkedIn", form.captionLinkedIn),
+  ].join("\n");
+}
+
+type BuildCaptionTipsLlmPromptOptions = {
+  /** Standard: ja. Im Sammelprompt nur einmal oben, nicht in jedem Kanalblock wiederholen. */
+  includeFormSnapshot?: boolean;
+};
+
+/**
+ * Strukturierter Prompt für LLMs: VDID-Kurzprofil; bei Website zusätzlich
+ * übertragbare Vorlage für Länge/Aufbau des Kontexts; Kanal, Länge, Checkliste.
+ * Optional: aktuelle Generator-Eingaben als Faktengrundlage.
+ */
+function buildCaptionTipsLlmPrompt(
+  platform: CaptionTipsPlatform,
+  form: EventFormState,
+  options?: BuildCaptionTipsLlmPromptOptions,
+): string {
+  const includeFormSnapshot = options?.includeFormSnapshot ?? true;
+  const meta = CAPTION_PERFORMANCE_COPY[platform];
+  const softChars = CAPTION_SWEET_SPOT[platform];
+  const lengthNote = PLATFORM_LENGTH_GUIDANCE[platform];
+  const checklist = meta.tips
+    .map((tip, i) => `${i + 1}. ${tip}`)
+    .join("\n");
+
+  const sections: string[] = [
+    "Du bist ein erfahrener Redakteur für Organisations- und Eventkommunikation.",
+    "",
+    "## Auftrag",
+    "Formuliere, überarbeite oder bewerte Begleittexte (Captions) für Veröffentlichungen — angelehnt an die folgenden kanalspezifischen Qualitätskriterien.",
+    "",
+  ];
+
+  if (includeFormSnapshot) {
+    sections.push(
+      "## Aktuelle Eingaben aus dem Asset-Generator",
+      "Nutze diese Angaben als Faktengrundlage; Platzhalter bedeuten: Feld noch leer oder nicht gewählt.",
+      "",
+      formatEventFormForLlmPrompt(form),
+      "",
+    );
+  }
+
+  sections.push(
+    "## Organisation und Marke — VDID",
+    VDID_ORG_DESCRIPTION_FOR_LLM,
+    "",
+  );
+
+  if (platform === "website") {
+    sections.push(
+      "## Substanz und Aufbau des narrativen Website-Kontexts (übertragbare Vorlage)",
+      WEBSITE_LLM_CONTEXT_STRUCTURE_BLUEPRINT,
+      "",
+    );
+  }
+
+  sections.push(
+    "## Zielkanal",
+    meta.title,
+    "",
+    "## Orientierung zur Textlänge (weiche Richtzahl, keine harte Obergrenze)",
+    `- Zielorientierung: etwa ${softChars} Zeichen.`,
+    `- Einordnung: ${lengthNote}`,
+    "",
+    "## Checkliste — Hinweise für diesen Kanal",
+    checklist,
+    "",
+    "## Ausgabe",
+    "Arbeite auf Deutsch, sofern der Nutzer nicht ausdrücklich eine andere Sprache wünscht. Halte dich an die Checkliste; erwähne bei Bewertungen kurz, welche Kriterien besonders gut erfüllt sind oder fehlen.",
+  );
+
+  return sections.join("\n");
+}
+
+/**
+ * Reihenfolge im kombinierten Mehrkanal-Prompt — fest und unveränderlich:
+ * 1. Website, 2. Instagram, 3. LinkedIn.
+ */
+const CAPTION_LLM_PROMPT_CHANNEL_ORDER = Object.freeze([
+  "website",
+  "instagram",
+  "linkedin",
+] as const satisfies readonly CaptionTipsPlatform[]);
+
+/**
+ * Sammelprompt: zuerst alle Eingaben, dann Kanäle in fester Reihenfolge mit `---`,
+ * Markdown-`#`-Überschrift je Kanal. Kanaltexte ohne wiederholte Eingabeliste (steht oben).
+ */
+function buildAllCaptionTipsLlmPrompt(form: EventFormState): string {
+  const preamble = [
+    "# Asset-Generator — aktuelle Eingaben",
+    "",
+    formatEventFormForLlmPrompt(form),
+    "",
+    "---",
+    "",
+    "**Kanäle (feste Reihenfolge, nicht umstellen):** 1. Website → 2. Instagram → 3. LinkedIn.",
+    "Die folgenden Abschnitte enthalten je Kanal die fachlichen Hinweise und VDID-Kontexte; die Generator-Eingaben sind nur oben aufgeführt.",
+    "",
+    "---",
+    "",
+  ].join("\n");
+
+  const blocks: string[] = [];
+  for (const platform of CAPTION_LLM_PROMPT_CHANNEL_ORDER) {
+    const title = CAPTION_PERFORMANCE_COPY[platform].title;
+    const body = buildCaptionTipsLlmPrompt(platform, form, {
+      includeFormSnapshot: false,
+    });
+    blocks.push(`# ${title}\n\n${body}`);
+  }
+
+  return preamble + blocks.join("\n\n---\n\n");
+}
+
+function PerformanceTipsModal({
+  platform,
+  onClose,
+}: {
+  platform: CaptionTipsPlatform;
+  onClose: () => void;
+}) {
+  const copy = CAPTION_PERFORMANCE_COPY[platform];
+
   return (
-    <span className="group relative inline-flex">
-      <button
-        type="button"
-        aria-label="Hinweis anzeigen"
-        title={text}
-        className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border border-slate-300 bg-white text-[10px] font-semibold leading-none text-slate-600 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-vdidBlue focus-visible:ring-offset-1"
-        onClick={(e) => e.preventDefault()}
+    <div
+      className="fixed inset-0 z-[101] flex items-center justify-center bg-black/50 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="caption-performance-modal-title"
+      onClick={onClose}
+    >
+      <div
+        className="max-h-[min(85vh,720px)] w-full max-w-lg overflow-y-auto rounded-lg border border-slate-200 bg-white p-5 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
       >
-        i
-      </button>
-      <span
-        role="tooltip"
-        className="pointer-events-none invisible absolute left-0 top-full z-20 mt-1 w-72 -translate-x-2 rounded-md border border-slate-200 bg-white p-2 text-xs leading-snug text-slate-700 shadow-md group-hover:visible group-focus-within:visible"
-      >
-        {text}
-      </span>
-    </span>
+        <div className="border-b border-slate-100 pb-3">
+          <h2
+            id="caption-performance-modal-title"
+            className="text-lg font-semibold leading-snug text-slate-900"
+          >
+            {copy.title}
+          </h2>
+        </div>
+        <ul className="mt-4 list-disc space-y-2.5 pl-5 text-sm leading-relaxed text-slate-700">
+          {copy.tips.map((item, idx) => (
+            <li key={idx}>{item}</li>
+          ))}
+        </ul>
+      </div>
+    </div>
   );
 }
 
-function FieldHeader({
+function CaptionFieldLabel({
   htmlFor,
   label,
   required,
-  tip,
+  onOpenTips,
 }: {
   htmlFor: string;
   label: string;
   required?: boolean;
-  tip?: string;
+  onOpenTips: () => void;
 }) {
   return (
     <div className="flex items-center gap-1.5">
@@ -235,7 +542,15 @@ function FieldHeader({
         {label}
         {required && <RequiredMark />}
       </Label>
-      {tip && <InfoTip text={tip} />}
+      <button
+        type="button"
+        aria-label="Tipps für Reichweite und Performance anzeigen"
+        aria-haspopup="dialog"
+        className="inline-flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded-full border border-slate-300 bg-white text-[11px] font-semibold leading-none text-slate-600 shadow-sm hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-vdidBlue focus-visible:ring-offset-1"
+        onClick={onOpenTips}
+      >
+        i
+      </button>
     </div>
   );
 }
@@ -258,7 +573,6 @@ function CharCount({
       aria-live="polite"
     >
       {len} / {softLimit} Zeichen
-      {over && " — über Empfehlung"}
     </p>
   );
 }
@@ -296,6 +610,10 @@ export function EventAssetGenerator() {
   });
   const [overlayEnabled, setOverlayEnabled] = React.useState(false);
   const [overlayOpacity, setOverlayOpacity] = React.useState(0.35);
+  const [backgroundGrayscaleEnabled, setBackgroundGrayscaleEnabled] =
+    React.useState(false);
+  const [blueTintEnabled, setBlueTintEnabled] = React.useState(false);
+  const [blueTintOpacity, setBlueTintOpacity] = React.useState(0.22);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const focalContainerRef = React.useRef<HTMLDivElement | null>(null);
   const [focalMarkerPx, setFocalMarkerPx] = React.useState<{
@@ -306,6 +624,15 @@ export function EventAssetGenerator() {
     key: FormatKey;
     dataUrl: string;
   } | null>(null);
+  const [captionTipsModal, setCaptionTipsModal] =
+    React.useState<CaptionTipsPlatform | null>(null);
+  const handleCopyAllCaptionPrompts = React.useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(buildAllCaptionTipsLlmPrompt(form));
+    } catch {
+      /* clipboard API unavailable */
+    }
+  }, [form]);
 
   React.useEffect(() => {
     try {
@@ -474,22 +801,24 @@ export function EventAssetGenerator() {
   };
 
   React.useEffect(() => {
-    if (!formatPreviewLightbox) return;
+    if (!captionTipsModal && !formatPreviewLightbox) return;
     const onKey = (ev: KeyboardEvent) => {
-      if (ev.key === "Escape") setFormatPreviewLightbox(null);
+      if (ev.key !== "Escape") return;
+      if (captionTipsModal) setCaptionTipsModal(null);
+      else setFormatPreviewLightbox(null);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [formatPreviewLightbox]);
+  }, [captionTipsModal, formatPreviewLightbox]);
 
   React.useEffect(() => {
-    if (!formatPreviewLightbox) return;
+    if (!captionTipsModal && !formatPreviewLightbox) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = prev;
     };
-  }, [formatPreviewLightbox]);
+  }, [captionTipsModal, formatPreviewLightbox]);
 
   React.useLayoutEffect(() => {
     const el = focalContainerRef.current;
@@ -563,6 +892,9 @@ export function EventAssetGenerator() {
         focalPoint,
         overlayEnabled,
         overlayOpacity,
+        backgroundGrayscaleEnabled,
+        blueTintEnabled,
+        blueTintOpacity,
       });
     });
   }, [
@@ -571,6 +903,9 @@ export function EventAssetGenerator() {
     focalPoint,
     overlayEnabled,
     overlayOpacity,
+    backgroundGrayscaleEnabled,
+    blueTintEnabled,
+    blueTintOpacity,
   ]);
 
   React.useEffect(() => {
@@ -777,6 +1112,9 @@ export function EventAssetGenerator() {
     clearBackgroundImage();
     setOverlayEnabled(false);
     setOverlayOpacity(0.35);
+    setBackgroundGrayscaleEnabled(false);
+    setBlueTintEnabled(false);
+    setBlueTintOpacity(0.22);
     setExportHint(null);
     try {
       localStorage.removeItem(FORM_STORAGE_KEY);
@@ -1067,26 +1405,78 @@ export function EventAssetGenerator() {
                 />
               </div>
             )}
+            <div className="flex items-center gap-2 pt-1">
+              <Checkbox
+                id="backgroundGrayscale"
+                checked={backgroundGrayscaleEnabled}
+                onChange={(e) =>
+                  setBackgroundGrayscaleEnabled(e.target.checked)
+                }
+              />
+              <Label htmlFor="backgroundGrayscale" className="cursor-pointer">
+                Schwarzweiß (vor Filtern)
+              </Label>
+            </div>
+            <div className="flex items-center gap-2 pt-1">
+              <Checkbox
+                id="blueTintEnabled"
+                checked={blueTintEnabled}
+                onChange={(e) => setBlueTintEnabled(e.target.checked)}
+              />
+              <Label htmlFor="blueTintEnabled" className="cursor-pointer">
+                VDID-Blau als Farbfilter
+              </Label>
+            </div>
+            {blueTintEnabled && (
+              <div className="flex max-w-md flex-col gap-1">
+                <Label htmlFor="blueTintOpacity" className="text-xs">
+                  Intensität ({Math.round(blueTintOpacity * 100)}%)
+                </Label>
+                <input
+                  id="blueTintOpacity"
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={Math.round(blueTintOpacity * 100)}
+                  onChange={(e) =>
+                    setBlueTintOpacity(Number(e.target.value) / 100)
+                  }
+                  className="w-full accent-vdidBlue"
+                />
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
 
       <Card>
-        <CardHeader className="flex-col items-stretch gap-1">
-          <CardTitle>Captions</CardTitle>
-          <p className="text-sm font-normal leading-snug text-slate-600">
-            Begleittexte für die Kanäle — nicht auf der Grafik, nur für
-            Veröffentlichung und ZIP (.txt).
-          </p>
+        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+          <div className="min-w-0 flex-1 space-y-1">
+            <CardTitle>Captions</CardTitle>
+            <p className="text-sm font-normal leading-snug text-slate-600">
+              Begleittexte für die Kanäle — nicht auf der Grafik, nur für
+              Veröffentlichung und ZIP (.txt).
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="w-full shrink-0 sm:mt-0.5 sm:w-auto"
+            onClick={() => void handleCopyAllCaptionPrompts()}
+            aria-label="Prompt in die Zwischenablage kopieren"
+          >
+            Prompt kopieren
+          </Button>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-1">
-              <FieldHeader
+              <CaptionFieldLabel
                 htmlFor="captionWebsite"
                 label="Caption Website"
                 required
-                tip="Vollständiger Begleittext für Web / CMS (z. B. Teaser / Lede). Hook in die ersten ~155–160 Zeichen, damit der Suchergebnis-Snippet nicht abgeschnitten wird. Richtwert insgesamt ~500 Zeichen."
+                onOpenTips={() => setCaptionTipsModal("website")}
               />
               <Textarea
                 id="captionWebsite"
@@ -1096,14 +1486,17 @@ export function EventAssetGenerator() {
                 rows={5}
                 className="resize-y min-h-[100px]"
               />
-              <CharCount value={form.captionWebsite} softLimit={500} />
+              <CharCount
+                value={form.captionWebsite}
+                softLimit={CAPTION_SWEET_SPOT.website}
+              />
             </div>
             <div className="space-y-1">
-              <FieldHeader
+              <CaptionFieldLabel
                 htmlFor="captionInstagram"
                 label="Caption Instagram"
                 required
-                tip="Hook in die ersten ~125 Zeichen, da Instagram danach „mehr…“ einblendet — anschließend folgt der eigentliche Content. Hashtags ans Ende. Plattform-Limit insgesamt 2.200 Zeichen."
+                onOpenTips={() => setCaptionTipsModal("instagram")}
               />
               <Textarea
                 id="captionInstagram"
@@ -1113,14 +1506,17 @@ export function EventAssetGenerator() {
                 rows={5}
                 className="resize-y min-h-[100px]"
               />
-              <CharCount value={form.captionInstagram} softLimit={2200} />
+              <CharCount
+                value={form.captionInstagram}
+                softLimit={CAPTION_SWEET_SPOT.instagram}
+              />
             </div>
             <div className="space-y-1">
-              <FieldHeader
+              <CaptionFieldLabel
                 htmlFor="captionLinkedIn"
                 label="Caption LinkedIn"
                 required
-                tip="Hook in die ersten ~210 Zeichen (vor „…mehr anzeigen“), danach folgt der eigentliche Beitragstext. Max. 3 relevante Hashtags. Plattform-Limit insgesamt 3.000 Zeichen."
+                onOpenTips={() => setCaptionTipsModal("linkedin")}
               />
               <Textarea
                 id="captionLinkedIn"
@@ -1130,21 +1526,16 @@ export function EventAssetGenerator() {
                 rows={5}
                 className="resize-y min-h-[100px]"
               />
-              <CharCount value={form.captionLinkedIn} softLimit={3000} />
+              <CharCount
+                value={form.captionLinkedIn}
+                softLimit={CAPTION_SWEET_SPOT.linkedin}
+              />
             </div>
           </div>
-          <p className="text-xs text-slate-500">
-            Pflicht für den ZIP-Download; die drei Texte werden zusätzlich als
-            separate .txt-Dateien ins Archiv gelegt.
-          </p>
         </CardContent>
       </Card>
 
-      <div className="space-y-2">
-        <p className="text-xs text-slate-500">
-          Vorschau anklicken für große Ansicht (volle Exportauflösung).
-        </p>
-        <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-2">
         {(Object.keys(FORMAT_CONFIG) as FormatKey[]).map((key) => {
           const cfg = FORMAT_CONFIG[key];
           const pngReady =
@@ -1240,7 +1631,16 @@ export function EventAssetGenerator() {
           )}
         </div>
       </div>
-    </div>
+
+      {typeof document !== "undefined" &&
+        captionTipsModal &&
+        createPortal(
+          <PerformanceTipsModal
+            platform={captionTipsModal}
+            onClose={() => setCaptionTipsModal(null)}
+          />,
+          document.body,
+        )}
 
       {typeof document !== "undefined" &&
         formatPreviewLightbox &&
@@ -1254,17 +1654,6 @@ export function EventAssetGenerator() {
             }
             onClick={() => setFormatPreviewLightbox(null)}
           >
-            <button
-              type="button"
-              className="absolute right-4 top-4 rounded-full bg-white/15 px-3 py-1.5 text-sm font-medium text-white backdrop-blur transition-colors hover:bg-white/25"
-              aria-label="Schließen"
-              onClick={(e) => {
-                e.stopPropagation();
-                setFormatPreviewLightbox(null);
-              }}
-            >
-              Schließen
-            </button>
             <img
               src={formatPreviewLightbox.dataUrl}
               alt={`${FORMAT_CONFIG[formatPreviewLightbox.key].label}, große Ansicht`}
@@ -1279,11 +1668,18 @@ export function EventAssetGenerator() {
   );
 }
 
+/** Brand blue #0A2CD9 — same as solid fallback background. */
+const VDID_BLUE_RGB = { r: 10, g: 44, b: 217 } as const;
+
 type BackgroundDrawOptions = {
   backgroundImage: HTMLImageElement | null;
   focalPoint: FocalPoint;
   overlayEnabled: boolean;
   overlayOpacity: number;
+  /** Nur Hintergrundfoto; liegt vor Abdunkeln und Blauton. */
+  backgroundGrayscaleEnabled: boolean;
+  blueTintEnabled: boolean;
+  blueTintOpacity: number;
 };
 
 function clientPointToFocalNormalized(
@@ -1317,6 +1713,7 @@ function drawBackgroundCover(
   img: HTMLImageElement,
   focalX: number,
   focalY: number,
+  grayscale: boolean,
 ) {
   const iw = img.naturalWidth || img.width;
   const ih = img.naturalHeight || img.height;
@@ -1336,6 +1733,9 @@ function drawBackgroundCover(
   ctx.beginPath();
   ctx.rect(0, 0, width, height);
   ctx.clip();
+  if (grayscale) {
+    ctx.filter = "grayscale(1)";
+  }
   ctx.drawImage(img, dx, dy, drawW, drawH);
   ctx.restore();
 }
@@ -1343,14 +1743,21 @@ function drawBackgroundCover(
 function drawFormat(
   canvas: HTMLCanvasElement,
   ctx: CanvasRenderingContext2D,
-  cfg: { width: number; height: number; includeMeta: boolean },
+  cfg: FormatCanvasConfig,
   form: EventFormState,
   logo: HTMLImageElement,
   background: BackgroundDrawOptions,
 ) {
   const { width, height } = cfg;
-  const { backgroundImage, focalPoint, overlayEnabled, overlayOpacity } =
-    background;
+  const {
+    backgroundImage,
+    focalPoint,
+    overlayEnabled,
+    overlayOpacity,
+    backgroundGrayscaleEnabled,
+    blueTintEnabled,
+    blueTintOpacity,
+  } = background;
 
   // Background: photo with focal cover, or solid VDID blue
   if (backgroundImage && backgroundImage.complete) {
@@ -1361,6 +1768,7 @@ function drawFormat(
       backgroundImage,
       focalPoint.x,
       focalPoint.y,
+      backgroundGrayscaleEnabled,
     );
   } else {
     ctx.fillStyle = "#0A2CD9";
@@ -1372,15 +1780,32 @@ function drawFormat(
     ctx.fillRect(0, 0, width, height);
   }
 
-  // Safe margins
+  if (blueTintEnabled && blueTintOpacity > 0) {
+    const { r, g, b } = VDID_BLUE_RGB;
+    ctx.fillStyle = `rgba(${r},${g},${b},${blueTintOpacity})`;
+    ctx.fillRect(0, 0, width, height);
+  }
+
+  // Safe margins (typography / copyright)
   const marginX = width * 0.08;
   const marginY = height * 0.12;
 
-  // Draw logo (top left)
+  // Logo: offset from canvas corner = one VDID mark-square side at current scale,
+  // plus optional IG Story top safe area for system UI.
+  const lnw = logo.naturalWidth || logo.width;
+  const lnh = logo.naturalHeight || logo.height;
   const logoHeight = Math.min(height * 0.16, 160);
-  const logoAspect = logo.width / logo.height || 1;
+  const logoAspect = lnw / lnh || 1;
   const logoWidth = logoHeight * logoAspect;
-  ctx.drawImage(logo, marginX, marginY, logoWidth, logoHeight);
+  const lnhSafe = lnh > 0 ? lnh : VDID_LOGO_VIEWBOX_SIZE;
+  const unitSquarePx = logoHeight * (VDID_LOGO_MARK_SQUARE / lnhSafe);
+  const storyTopSafePx =
+    cfg.topUiSafeInsetRatio != null && cfg.topUiSafeInsetRatio > 0
+      ? height * cfg.topUiSafeInsetRatio
+      : 0;
+  const logoX = unitSquarePx;
+  const logoY = unitSquarePx + storyTopSafePx;
+  ctx.drawImage(logo, logoX, logoY, logoWidth, logoHeight);
 
   // Typography - positioned in lower third
   const titleMaxWidth = width - marginX * 2;
@@ -1465,7 +1890,7 @@ function drawFormat(
   
   // Position text group in lower third, ensuring no overlap
   // Minimum safe distance from logo
-  const logoBottom = marginY + logoHeight;
+  const logoBottom = logoY + logoHeight;
   const minDistanceFromLogo = height * 0.05; // 5% of canvas height minimum
   const minTextStartY = logoBottom + minDistanceFromLogo;
   
@@ -1552,21 +1977,18 @@ function drawCopyrightOnCanvas(
   width: number,
   height: number,
   text: string,
-  marginX: number,
-  marginY: number,
+  _marginX: number,
+  _marginY: number,
 ) {
   const trimmed = text.trim();
   if (!trimmed) return;
 
   const display = copyrightDisplayText(trimmed);
-  const marginRight = Math.max(10, marginX * 0.45);
-  const marginBottom = Math.max(12, marginY * 0.4);
-  const maxSpan = Math.max(40, height - marginY * 2);
+  /** Leave room for cap-height insets top/bottom once positioned. */
+  const maxSpan = Math.max(40, height - 8);
 
   ctx.save();
   ctx.fillStyle = "rgba(255,255,255,0.5)";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
 
   let fontSize = Math.max(10, Math.min(width, height) * 0.017);
   const minSize = 8;
@@ -1577,12 +1999,22 @@ function drawCopyrightOnCanvas(
   }
   ctx.font = `400 ${fontSize}px Roboto, system-ui, sans-serif`;
 
-  // Nach -90° entspricht die Textbreite der Höhe entlang der Kante; unten ausrichten
-  const verticalExtent = ctx.measureText(display).width;
-  const cx = width - marginRight;
-  const cy = height - marginBottom - verticalExtent / 2;
+  // Inset from bottom & right ≈ Versalhöhe: gleicher Abstand Baseline→untere Kante wie Typometrie.
+  const capProbe = ctx.measureText("H");
+  const capHeight =
+    capProbe.actualBoundingBoxAscent ??
+    capProbe.fontBoundingBoxAscent ??
+    fontSize * 0.72;
+  const inset = Math.max(2, capHeight);
+  /** Nudge anchor slightly up and left (along canvas axes before rotation). */
+  const nudge = Math.min(width, height);
+  const nudgeLeft = nudge * 0.018;
+  const nudgeUp = nudge * 0.018;
 
-  ctx.translate(cx, cy);
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+  // Baseline start unten rechts mit inset; nach CCW 90° (canvas: neg. Winkel) läuft die Zeile nach oben.
+  ctx.translate(width - inset - nudgeLeft, height - inset - nudgeUp);
   ctx.rotate(-Math.PI / 2);
   ctx.fillText(display, 0, 0);
   ctx.restore();

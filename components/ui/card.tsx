@@ -34,7 +34,10 @@ export function CardTitle({
 }: React.HTMLAttributes<HTMLHeadingElement>) {
   return (
     <h2
-      className={cn("text-sm font-medium text-slate-900", className)}
+      className={cn(
+        "text-lg font-normal leading-snug tracking-normal text-slate-900",
+        className,
+      )}
       {...props}
     />
   );
