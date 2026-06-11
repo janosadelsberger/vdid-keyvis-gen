@@ -405,7 +405,7 @@ function buildCaptionTipsLlmPrompt(
 
   if (includeFormSnapshot) {
     sections.push(
-      "## Aktuelle Eingaben aus dem Asset-Generator",
+      "## Aktuelle Eingaben aus dem Keyvisual Generator",
       "Nutze diese Angaben als Faktengrundlage; Platzhalter bedeuten: Feld noch leer oder nicht gewählt.",
       "",
       formatEventFormForLlmPrompt(form),
@@ -461,7 +461,7 @@ const CAPTION_LLM_PROMPT_CHANNEL_ORDER = Object.freeze([
  */
 function buildAllCaptionTipsLlmPrompt(form: EventFormState): string {
   const preamble = [
-    "# Asset-Generator — aktuelle Eingaben",
+    "# Keyvisual Generator — aktuelle Eingaben",
     "",
     formatEventFormForLlmPrompt(form),
     "",

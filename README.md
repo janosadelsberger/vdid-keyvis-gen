@@ -1,6 +1,6 @@
-# VDID Event Asset Generator
+# VDID Keyvisual Generator
 
-A web application for generating VDID-compliant event promotion assets in multiple formats.
+A web application for generating VDID key visuals in multiple formats.
 
 ## Features
 

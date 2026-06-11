@@ -18,7 +18,7 @@ export default function Home() {
               className="w-16 h-16"
             />
           </div>
-          <h1 className="text-lg font-medium text-white">Asset Generator</h1>
+          <h1 className="text-lg font-medium text-white">Keyvisual Generator</h1>
         </div>
 
         {/* Main Content - Centered */}

@@ -9,8 +9,8 @@ const roboto = Roboto({
 });
 
 export const metadata: Metadata = {
-  title: "VDID Event Asset Generator",
-  description: "Generate VDID-compliant event visuals for web and social media.",
+  title: "VDID Keyvisual Generator",
+  description: "Generate VDID key visuals for web and social media.",
 };
 
 export default function RootLayout({
