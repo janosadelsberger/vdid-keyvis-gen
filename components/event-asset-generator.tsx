@@ -13,7 +13,16 @@ import { DatePicker } from "@/components/ui/date-picker";
 import { TimePicker } from "@/components/ui/time-picker";
 import { Checkbox } from "@/components/ui/checkbox";
 import { publicFile } from "@/lib/public-file";
+import { exportAssetBasename } from "@/lib/export-naming";
 import { cn } from "@/lib/utils";
+import { ImageDropZone } from "@/components/image-drop-zone";
+import { ImageEditModal } from "@/components/image-edit-modal";
+import {
+  DEFAULT_IMAGE_EDIT_SETTINGS,
+  applyImageEditOverlays,
+  drawBackgroundCover,
+  type ImageEditSettings,
+} from "@/lib/image-edit";
 
 type EventFormState = {
   eventFormat: string;
@@ -104,8 +113,6 @@ function parseStoredForm(raw: string): EventFormState | null {
     return null;
   }
 }
-
-type FocalPoint = { x: number; y: number };
 
 type BackgroundLoadState = "idle" | "loading" | "ready";
 
@@ -198,30 +205,12 @@ const FORMAT_EXPORT_SLUG: Record<FormatKey, string> = {
   zoomBackground: "Zoom-Background-1920x1080",
 };
 
-function sanitizeTitleForFilename(raw: string): string {
-  const fallback = "event";
-  const trimmed = raw.trim();
-  if (!trimmed) return fallback;
-  const cleaned = trimmed
-    .replace(/[/\\?%*:|"<>]/g, "_")
-    .replace(/\s+/g, "_")
-    .replace(/_+/g, "_")
-    .replace(/^_|_$/g, "")
-    .slice(0, 80);
-  return cleaned || fallback;
-}
+const ALL_FORMAT_KEYS = Object.keys(FORMAT_CONFIG) as FormatKey[];
 
-/**
- * `yymmdd_title_format` without extension.
- * `downloadDate` must be **today** when the user triggers download — never the event date field.
- */
-function exportAssetBasename(
-  title: string,
-  formatSlug: string,
-  downloadDate: Date,
-): string {
-  const yymmdd = format(downloadDate, "yyMMdd");
-  return `${yymmdd}_${sanitizeTitleForFilename(title)}_${formatSlug}`;
+function allKeyvisualFormatsEnabled(): Record<FormatKey, boolean> {
+  return Object.fromEntries(
+    ALL_FORMAT_KEYS.map((k) => [k, true]),
+  ) as Record<FormatKey, boolean>;
 }
 
 function RequiredMark() {
@@ -604,28 +593,34 @@ export function EventAssetGenerator() {
     width: number;
     height: number;
   } | null>(null);
-  const [focalPoint, setFocalPoint] = React.useState<FocalPoint>({
-    x: 0.5,
-    y: 0.5,
-  });
-  const [overlayEnabled, setOverlayEnabled] = React.useState(false);
-  const [overlayOpacity, setOverlayOpacity] = React.useState(0.35);
-  const [backgroundGrayscaleEnabled, setBackgroundGrayscaleEnabled] =
-    React.useState(false);
-  const [blueTintEnabled, setBlueTintEnabled] = React.useState(false);
-  const [blueTintOpacity, setBlueTintOpacity] = React.useState(0.22);
-  const fileInputRef = React.useRef<HTMLInputElement>(null);
-  const focalContainerRef = React.useRef<HTMLDivElement | null>(null);
-  const [focalMarkerPx, setFocalMarkerPx] = React.useState<{
-    left: number;
-    top: number;
-  } | null>(null);
+  const [imageEditSettings, setImageEditSettings] =
+    React.useState<ImageEditSettings>(DEFAULT_IMAGE_EDIT_SETTINGS);
+  const [imageEditModalOpen, setImageEditModalOpen] = React.useState(false);
   const [formatPreviewLightbox, setFormatPreviewLightbox] = React.useState<{
     key: FormatKey;
     dataUrl: string;
   } | null>(null);
   const [captionTipsModal, setCaptionTipsModal] =
     React.useState<CaptionTipsPlatform | null>(null);
+  const [formatEnabled, setFormatEnabled] = React.useState<
+    Record<FormatKey, boolean>
+  >(allKeyvisualFormatsEnabled);
+
+  const enabledFormatKeys = React.useMemo(
+    () => ALL_FORMAT_KEYS.filter((key) => formatEnabled[key]),
+    [formatEnabled],
+  );
+
+  const toggleFormatEnabled = (key: FormatKey, checked: boolean) => {
+    setFormatEnabled((prev) => {
+      if (!checked) {
+        const enabledCount = ALL_FORMAT_KEYS.filter((k) => prev[k]).length;
+        if (enabledCount <= 1) return prev;
+      }
+      return { ...prev, [key]: checked };
+    });
+  };
+
   const handleCopyAllCaptionPrompts = React.useCallback(async () => {
     try {
       await navigator.clipboard.writeText(buildAllCaptionTipsLlmPrompt(form));
@@ -696,12 +691,13 @@ export function EventAssetGenerator() {
     revokeBackgroundUrl();
     backgroundImageRef.current = null;
     setPreviewNaturalSize(null);
-    setFocalPoint({ x: 0.5, y: 0.5 });
+    setImageEditSettings(DEFAULT_IMAGE_EDIT_SETTINGS);
 
     const url = URL.createObjectURL(file);
     backgroundObjectUrlRef.current = url;
     setPreviewObjectUrl(url);
     setBackgroundLoadState("loading");
+    setImageEditModalOpen(true);
 
     const img = new Image();
     img.onload = () => {
@@ -723,81 +719,14 @@ export function EventAssetGenerator() {
     img.src = url;
   }, []);
 
-  const handleBackgroundFileChange: React.ChangeEventHandler<
-    HTMLInputElement
-  > = (e) => {
-    applyBackgroundFile(e.target.files?.[0]);
-    e.target.value = "";
-  };
-
-  const [dropZoneActive, setDropZoneActive] = React.useState(false);
-
-  const handleDropZoneDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const target = e.currentTarget;
-    const related = e.relatedTarget as Node | null;
-    if (related && target.contains(related)) return;
-    setDropZoneActive(true);
-  };
-
-  const handleDropZoneDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const target = e.currentTarget;
-    const related = e.relatedTarget as Node | null;
-    if (related && target.contains(related)) return;
-    setDropZoneActive(false);
-  };
-
-  const handleDropZoneDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    e.dataTransfer.dropEffect = "copy";
-  };
-
-  const handleDropZoneDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDropZoneActive(false);
-    applyBackgroundFile(e.dataTransfer.files?.[0]);
-  };
-
   const clearBackgroundImage = () => {
     revokeBackgroundUrl();
     backgroundImageRef.current = null;
     setPreviewObjectUrl(null);
     setPreviewNaturalSize(null);
     setBackgroundLoadState("idle");
-    setFocalPoint({ x: 0.5, y: 0.5 });
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
-  };
-
-  const handleFocalPreviewClick = (
-    e: React.MouseEvent<HTMLDivElement>,
-  ) => {
-    if (!previewObjectUrl || !previewNaturalSize) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const { width: nw, height: nh } = previewNaturalSize;
-    const { x, y } = clientPointToFocalNormalized(
-      e.clientX,
-      e.clientY,
-      rect,
-      nw,
-      nh,
-    );
-    setFocalPoint({ x, y });
-  };
-
-  const openFormatPreviewLightbox = (key: FormatKey) => {
-    const canvas = canvasRefs.current[key];
-    if (!canvas || canvas.width === 0) return;
-    setFormatPreviewLightbox({
-      key,
-      dataUrl: canvas.toDataURL("image/png"),
-    });
+    setImageEditSettings(DEFAULT_IMAGE_EDIT_SETTINGS);
+    setImageEditModalOpen(false);
   };
 
   React.useEffect(() => {
@@ -819,33 +748,6 @@ export function EventAssetGenerator() {
       document.body.style.overflow = prev;
     };
   }, [captionTipsModal, formatPreviewLightbox]);
-
-  React.useLayoutEffect(() => {
-    const el = focalContainerRef.current;
-    if (!el || !previewNaturalSize || !previewObjectUrl) {
-      setFocalMarkerPx(null);
-      return;
-    }
-    const update = () => {
-      const W = el.clientWidth;
-      const H = el.clientHeight;
-      const nw = previewNaturalSize.width;
-      const nh = previewNaturalSize.height;
-      const scale = Math.min(W / nw, H / nh);
-      const dispW = nw * scale;
-      const dispH = nh * scale;
-      const offX = (W - dispW) / 2;
-      const offY = (H - dispH) / 2;
-      setFocalMarkerPx({
-        left: offX + focalPoint.x * dispW,
-        top: offY + focalPoint.y * dispH,
-      });
-    };
-    update();
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [focalPoint, previewNaturalSize, previewObjectUrl]);
 
   const handleChangeText = (
     field:
@@ -878,7 +780,7 @@ export function EventAssetGenerator() {
     const backgroundImage =
       backgroundLoadState === "ready" ? backgroundImageRef.current : null;
 
-    (Object.keys(FORMAT_CONFIG) as FormatKey[]).forEach((key) => {
+    (enabledFormatKeys).forEach((key) => {
       const canvas = canvasRefs.current[key];
       if (!canvas) return;
       const cfg = FORMAT_CONFIG[key];
@@ -889,30 +791,41 @@ export function EventAssetGenerator() {
 
       drawFormat(canvas, ctx, cfg, form, logo, {
         backgroundImage,
-        focalPoint,
-        overlayEnabled,
-        overlayOpacity,
-        backgroundGrayscaleEnabled,
-        blueTintEnabled,
-        blueTintOpacity,
+        imageEdits: imageEditSettings,
       });
     });
   }, [
     form,
     backgroundLoadState,
-    focalPoint,
-    overlayEnabled,
-    overlayOpacity,
-    backgroundGrayscaleEnabled,
-    blueTintEnabled,
-    blueTintOpacity,
+    imageEditSettings,
+    enabledFormatKeys,
   ]);
 
-  React.useEffect(() => {
+  React.useLayoutEffect(() => {
     if (logoLoaded) {
       renderAll();
     }
   }, [logoLoaded, renderAll]);
+
+  const setCanvasRef = React.useCallback(
+    (key: FormatKey) => (el: HTMLCanvasElement | null) => {
+      canvasRefs.current[key] = el;
+      if (el && logoRef.current) {
+        renderAll();
+      }
+    },
+    [renderAll],
+  );
+
+  const openFormatPreviewLightbox = (key: FormatKey) => {
+    renderAll();
+    const canvas = canvasRefs.current[key];
+    if (!canvas || canvas.width === 0) return;
+    setFormatPreviewLightbox({
+      key,
+      dataUrl: canvas.toDataURL("image/png"),
+    });
+  };
 
   const handleDownload = (key: FormatKey) => {
     const canvas = canvasRefs.current[key];
@@ -934,7 +847,8 @@ export function EventAssetGenerator() {
     form.captionLinkedIn.trim().length > 0 &&
     form.copyright.trim().length > 0;
 
-  const zipDownloadReady = assetsReady && zipTextsReady;
+  const zipDownloadReady =
+    assetsReady && zipTextsReady && enabledFormatKeys.length > 0;
 
   React.useEffect(() => {
     setExportHint(null);
@@ -986,7 +900,7 @@ export function EventAssetGenerator() {
     }[] = [];
 
     // Add each canvas as a PNG to the zip
-    (Object.keys(FORMAT_CONFIG) as FormatKey[]).forEach((key) => {
+    enabledFormatKeys.forEach((key) => {
       const canvas = canvasRefs.current[key];
       if (canvas) {
         const dataUrl = canvas.toDataURL("image/png");
@@ -1110,11 +1024,9 @@ export function EventAssetGenerator() {
   const handleResetForm = () => {
     setForm(INITIAL_FORM_STATE);
     clearBackgroundImage();
-    setOverlayEnabled(false);
-    setOverlayOpacity(0.35);
-    setBackgroundGrayscaleEnabled(false);
-    setBlueTintEnabled(false);
-    setBlueTintOpacity(0.22);
+    setImageEditSettings(DEFAULT_IMAGE_EDIT_SETTINGS);
+    setImageEditModalOpen(false);
+    setFormatEnabled(allKeyvisualFormatsEnabled());
     setExportHint(null);
     try {
       localStorage.removeItem(FORM_STORAGE_KEY);
@@ -1124,6 +1036,10 @@ export function EventAssetGenerator() {
   };
 
   const handleZipButtonClick = () => {
+    if (enabledFormatKeys.length === 0) {
+      setExportHint("Mindestens ein Bildformat auswählen.");
+      return;
+    }
     const missing = collectZipMissing();
     if (missing.length > 0) {
       setExportHint(`Es fehlen noch: ${missing.join(", ")}.`);
@@ -1271,183 +1187,38 @@ export function EventAssetGenerator() {
           <CardTitle>Hintergrund</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            className="sr-only"
+          <ImageDropZone
             id="background-image"
-            tabIndex={-1}
-            onChange={handleBackgroundFileChange}
+            previewUrl={previewObjectUrl}
+            onFile={(file) => applyBackgroundFile(file)}
+            onClear={clearBackgroundImage}
+            hint="Optional: Hintergrund für alle Formate. PNG, JPG, WebP … — sehr große Dateien können den Browser verlangsamen."
           />
-          <div
-            className={cn(
-              "relative flex min-h-[140px] flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed px-4 py-8 text-center transition-colors",
-              previewObjectUrl ? "min-h-[88px] py-5" : "py-10",
-              dropZoneActive
-                ? "border-vdidBlue bg-blue-50 ring-2 ring-vdidBlue/25"
-                : "border-slate-300 bg-slate-50 hover:border-slate-400",
-            )}
-            onDragEnter={handleDropZoneDragEnter}
-            onDragLeave={handleDropZoneDragLeave}
-            onDragOver={handleDropZoneDragOver}
-            onDrop={handleDropZoneDrop}
-          >
-            <p className="text-sm text-slate-700">
-              <label
-                htmlFor="background-image"
-                className="cursor-pointer font-medium text-vdidBlue underline-offset-4 hover:underline"
-              >
-                Datei wählen
-              </label>
-              <span className="text-slate-600">
-                {" "}
-                oder Bild hierher ziehen
-              </span>
-            </p>
-            <p className="max-w-md text-xs text-slate-500">
-              Optional: Hintergrund für alle Formate. PNG, JPG, WebP … — sehr
-              große Dateien können den Browser verlangsamen.
-            </p>
-            {previewObjectUrl && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="mt-1"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  clearBackgroundImage();
-                }}
-              >
-                Bild entfernen
-              </Button>
-            )}
-          </div>
-
-          {previewObjectUrl && previewNaturalSize && (
-            <div className="space-y-2">
-              <Label>Blickpunkt (Klick auf die Vorschau)</Label>
-              <div
-                ref={focalContainerRef}
-                role="button"
-                tabIndex={0}
-                className="relative mx-auto w-full max-w-xl cursor-crosshair rounded-md border border-slate-200 bg-slate-100"
-                style={{ minHeight: 120, maxHeight: 192 }}
-                onClick={handleFocalPreviewClick}
-                onKeyDown={(ev) => {
-                  if (ev.key === "Enter" || ev.key === " ") {
-                    ev.preventDefault();
-                  }
-                }}
-              >
-                <img
-                  src={previewObjectUrl}
-                  alt=""
-                  className="mx-auto block max-h-48 w-auto max-w-full object-contain"
-                  draggable={false}
-                />
-                {focalMarkerPx && (
-                  <span
-                    className="pointer-events-none absolute h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-vdidBlue shadow-md ring-2 ring-white/80"
-                    style={{
-                      left: focalMarkerPx.left,
-                      top: focalMarkerPx.top,
-                    }}
-                    aria-hidden
-                  />
-                )}
-              </div>
-              <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600">
-                <span>
-                  Blickpunkt: {Math.round(focalPoint.x * 100)}% ×{" "}
-                  {Math.round(focalPoint.y * 100)}%
-                </span>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-7 text-xs"
-                  onClick={() => setFocalPoint({ x: 0.5, y: 0.5 })}
-                >
-                  Mitte
-                </Button>
-              </div>
-            </div>
+          {previewObjectUrl && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setImageEditModalOpen(true)}
+            >
+              Bild bearbeiten…
+            </Button>
           )}
-
-          <div className="space-y-2 border-t border-slate-200 pt-4">
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="overlayEnabled"
-                checked={overlayEnabled}
-                onChange={(e) => setOverlayEnabled(e.target.checked)}
-              />
-              <Label htmlFor="overlayEnabled" className="cursor-pointer">
-                Abdunkeln für bessere Lesbarkeit
-              </Label>
-            </div>
-            {overlayEnabled && (
-              <div className="flex max-w-md flex-col gap-1">
-                <Label htmlFor="overlayOpacity" className="text-xs">
-                  Stärke ({Math.round(overlayOpacity * 100)}%)
-                </Label>
-                <input
-                  id="overlayOpacity"
-                  type="range"
-                  min={0}
-                  max={100}
-                  value={Math.round(overlayOpacity * 100)}
-                  onChange={(e) =>
-                    setOverlayOpacity(Number(e.target.value) / 100)
-                  }
-                  className="w-full accent-vdidBlue"
-                />
-              </div>
-            )}
-            <div className="flex items-center gap-2 pt-1">
-              <Checkbox
-                id="backgroundGrayscale"
-                checked={backgroundGrayscaleEnabled}
-                onChange={(e) =>
-                  setBackgroundGrayscaleEnabled(e.target.checked)
-                }
-              />
-              <Label htmlFor="backgroundGrayscale" className="cursor-pointer">
-                Schwarzweiß (vor Filtern)
-              </Label>
-            </div>
-            <div className="flex items-center gap-2 pt-1">
-              <Checkbox
-                id="blueTintEnabled"
-                checked={blueTintEnabled}
-                onChange={(e) => setBlueTintEnabled(e.target.checked)}
-              />
-              <Label htmlFor="blueTintEnabled" className="cursor-pointer">
-                VDID-Blau als Farbfilter
-              </Label>
-            </div>
-            {blueTintEnabled && (
-              <div className="flex max-w-md flex-col gap-1">
-                <Label htmlFor="blueTintOpacity" className="text-xs">
-                  Intensität ({Math.round(blueTintOpacity * 100)}%)
-                </Label>
-                <input
-                  id="blueTintOpacity"
-                  type="range"
-                  min={0}
-                  max={100}
-                  value={Math.round(blueTintOpacity * 100)}
-                  onChange={(e) =>
-                    setBlueTintOpacity(Number(e.target.value) / 100)
-                  }
-                  className="w-full accent-vdidBlue"
-                />
-              </div>
-            )}
-          </div>
         </CardContent>
       </Card>
+
+      <ImageEditModal
+        open={imageEditModalOpen}
+        onClose={() => setImageEditModalOpen(false)}
+        title="Hintergrund bearbeiten"
+        imageUrl={previewObjectUrl}
+        naturalSize={previewNaturalSize}
+        settings={imageEditSettings}
+        onSettingsChange={setImageEditSettings}
+        onFileSelected={(file) => applyBackgroundFile(file)}
+        onClearImage={clearBackgroundImage}
+        idPrefix="keyvisual-bg"
+        uploadHint="PNG, JPG, WebP …"
+      />
 
       <Card>
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
@@ -1535,8 +1306,32 @@ export function EventAssetGenerator() {
         </CardContent>
       </Card>
 
+      <Card>
+        <CardHeader>
+          <CardTitle>Export-Formate</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap gap-x-6 gap-y-3">
+            {ALL_FORMAT_KEYS.map((key) => (
+              <div key={key} className="flex items-center gap-2">
+                <Checkbox
+                  id={`format-${key}`}
+                  checked={formatEnabled[key]}
+                  onChange={(e) =>
+                    toggleFormatEnabled(key, e.target.checked)
+                  }
+                />
+                <Label htmlFor={`format-${key}`} className="cursor-pointer">
+                  {FORMAT_CONFIG[key].label}
+                </Label>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="grid gap-4 lg:grid-cols-2">
-        {(Object.keys(FORMAT_CONFIG) as FormatKey[]).map((key) => {
+        {enabledFormatKeys.map((key) => {
           const cfg = FORMAT_CONFIG[key];
           const pngReady =
             assetsReady &&
@@ -1571,9 +1366,7 @@ export function EventAssetGenerator() {
                       aria-label={`${cfg.label} in groß anzeigen`}
                     >
                       <canvas
-                        ref={(el) => {
-                          canvasRefs.current[key] = el;
-                        }}
+                        ref={setCanvasRef(key)}
                         className="block bg-vdidBlue transition-opacity group-hover:opacity-95 group-disabled:cursor-not-allowed group-disabled:opacity-60"
                         style={{
                           maxWidth: "100%",
@@ -1603,6 +1396,11 @@ export function EventAssetGenerator() {
               )}
             >
               Alle Assets als ZIP herunterladen
+              {enabledFormatKeys.length < ALL_FORMAT_KEYS.length && (
+                <span className="ml-1 font-normal opacity-80">
+                  ({enabledFormatKeys.length} Formate)
+                </span>
+              )}
             </Button>
             <Button
               type="button"
@@ -1669,75 +1467,130 @@ export function EventAssetGenerator() {
 }
 
 /** Brand blue #0A2CD9 — same as solid fallback background. */
-const VDID_BLUE_RGB = { r: 10, g: 44, b: 217 } as const;
 
 type BackgroundDrawOptions = {
   backgroundImage: HTMLImageElement | null;
-  focalPoint: FocalPoint;
-  overlayEnabled: boolean;
-  overlayOpacity: number;
-  /** Nur Hintergrundfoto; liegt vor Abdunkeln und Blauton. */
-  backgroundGrayscaleEnabled: boolean;
-  blueTintEnabled: boolean;
-  blueTintOpacity: number;
+  imageEdits: ImageEditSettings;
 };
 
-function clientPointToFocalNormalized(
-  clientX: number,
-  clientY: number,
-  containerRect: DOMRect,
-  naturalW: number,
-  naturalH: number,
-): FocalPoint {
-  const cw = containerRect.width;
-  const ch = containerRect.height;
-  const px = clientX - containerRect.left;
-  const py = clientY - containerRect.top;
-  const scale = Math.min(cw / naturalW, ch / naturalH);
-  const dispW = naturalW * scale;
-  const dispH = naturalH * scale;
-  const offX = (cw - dispW) / 2;
-  const offY = (ch - dispH) / 2;
-  const nx = (px - offX) / dispW;
-  const ny = (py - offY) / dispH;
-  return {
-    x: Math.min(1, Math.max(0, nx)),
-    y: Math.min(1, Math.max(0, ny)),
-  };
-}
+type KeyvisualTextLayout = {
+  titleFontSize: number;
+  metaFontSize: number;
+  subtitleFontSize: number;
+  lineHeightTitle: number;
+  lineHeightSubtitle: number;
+  eventFormatLines: string[];
+  titleLines: string[];
+  subtitleLines: string[];
+  spacingAfterEventFormat: number;
+  spacingAfterTitle: number;
+  spacingAfterSubtitle: number;
+  totalTextHeight: number;
+  textStartY: number;
+  metaParts: string[];
+};
 
-function drawBackgroundCover(
+function measureKeyvisualTextLayout(
   ctx: CanvasRenderingContext2D,
-  width: number,
-  height: number,
-  img: HTMLImageElement,
-  focalX: number,
-  focalY: number,
-  grayscale: boolean,
-) {
-  const iw = img.naturalWidth || img.width;
-  const ih = img.naturalHeight || img.height;
-  if (iw <= 0 || ih <= 0) return;
+  args: {
+    titleFontSize: number;
+    titleMaxWidth: number;
+    width: number;
+    height: number;
+    marginY: number;
+    minTextStartY: number;
+    includeMeta: boolean;
+    eventFormatText: string;
+    title: string;
+    subtitle: string;
+    metaParts: string[];
+  },
+): KeyvisualTextLayout {
+  const {
+    titleFontSize,
+    titleMaxWidth,
+    width,
+    height,
+    marginY,
+    minTextStartY,
+    includeMeta,
+    eventFormatText,
+    title,
+    subtitle,
+    metaParts,
+  } = args;
 
-  const scale = Math.max(width / iw, height / ih);
-  const drawW = iw * scale;
-  const drawH = ih * scale;
-  // Pan so focal sits near center, but clamp so the scaled bitmap always covers
-  // the full canvas (no letterboxing gaps when focal is near an edge).
-  const dxIdeal = width / 2 - focalX * drawW;
-  const dyIdeal = height / 2 - focalY * drawH;
-  const dx = Math.min(0, Math.max(width - drawW, dxIdeal));
-  const dy = Math.min(0, Math.max(height - drawH, dyIdeal));
+  const metaFontSize = titleFontSize * 0.45;
+  const subtitleFontSize = titleFontSize * 0.55;
+  const lineHeightTitle = titleFontSize * 1.2;
+  const lineHeightSubtitle = subtitleFontSize * 1.3;
 
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(0, 0, width, height);
-  ctx.clip();
-  if (grayscale) {
-    ctx.filter = "grayscale(1)";
+  ctx.font = `400 ${metaFontSize}px Roboto, system-ui, sans-serif`;
+  const eventFormatLines = eventFormatText
+    ? wrapText(ctx, eventFormatText, titleMaxWidth)
+    : [];
+
+  ctx.font = `500 ${titleFontSize}px Roboto, system-ui, sans-serif`;
+  const titleLines = title.trim() ? wrapText(ctx, title, titleMaxWidth) : [];
+
+  ctx.font = `400 ${subtitleFontSize}px Roboto, system-ui, sans-serif`;
+  const subtitleLines = subtitle ? wrapText(ctx, subtitle, titleMaxWidth) : [];
+
+  const spacingAfterEventFormat = metaFontSize * 0.8;
+  const spacingAfterTitle = subtitleFontSize * 0.8;
+  const spacingAfterSubtitle = metaFontSize * 1.0;
+
+  const eventFormatHeight = eventFormatLines.length * metaFontSize * 1.2;
+  const titleHeight = titleLines.length * lineHeightTitle;
+  const subtitleHeight = subtitleLines.length * lineHeightSubtitle;
+  const metaHeight = metaFontSize * 1.4;
+
+  let totalTextHeight = 0;
+  if (eventFormatText && eventFormatLines.length > 0) {
+    totalTextHeight += eventFormatHeight + spacingAfterEventFormat;
   }
-  ctx.drawImage(img, dx, dy, drawW, drawH);
-  ctx.restore();
+  totalTextHeight += titleHeight;
+
+  if (includeMeta) {
+    if (subtitle && subtitleLines.length > 0) {
+      totalTextHeight +=
+        (titleLines.length > 0 ? spacingAfterTitle : 0) + subtitleHeight;
+    }
+    if (metaParts.length > 0) {
+      totalTextHeight += spacingAfterSubtitle + metaHeight;
+    }
+  }
+
+  const lowerThirdStart = height * 0.67;
+  const maxTextEndY = height - marginY;
+
+  let textStartY: number;
+  if (includeMeta) {
+    const bottomPosition = height - marginY - totalTextHeight;
+    textStartY = Math.max(bottomPosition, lowerThirdStart, minTextStartY);
+    if (textStartY + totalTextHeight > maxTextEndY) {
+      textStartY = Math.max(maxTextEndY - totalTextHeight, minTextStartY);
+    }
+  } else {
+    textStartY = Math.max(lowerThirdStart, minTextStartY);
+  }
+
+  return {
+    titleFontSize,
+    metaFontSize,
+    subtitleFontSize,
+    lineHeightTitle,
+    lineHeightSubtitle,
+    eventFormatLines,
+    titleLines,
+    subtitleLines,
+    spacingAfterEventFormat,
+    spacingAfterTitle,
+    spacingAfterSubtitle,
+    totalTextHeight,
+    textStartY,
+    metaParts,
+  };
 }
 
 function drawFormat(
@@ -1749,15 +1602,7 @@ function drawFormat(
   background: BackgroundDrawOptions,
 ) {
   const { width, height } = cfg;
-  const {
-    backgroundImage,
-    focalPoint,
-    overlayEnabled,
-    overlayOpacity,
-    backgroundGrayscaleEnabled,
-    blueTintEnabled,
-    blueTintOpacity,
-  } = background;
+  const { backgroundImage, imageEdits } = background;
 
   // Background: photo with focal cover, or solid VDID blue
   if (backgroundImage && backgroundImage.complete) {
@@ -1766,25 +1611,16 @@ function drawFormat(
       width,
       height,
       backgroundImage,
-      focalPoint.x,
-      focalPoint.y,
-      backgroundGrayscaleEnabled,
+      imageEdits.focalPoint.x,
+      imageEdits.focalPoint.y,
+      imageEdits.grayscaleEnabled,
     );
   } else {
     ctx.fillStyle = "#0A2CD9";
     ctx.fillRect(0, 0, width, height);
   }
 
-  if (overlayEnabled && overlayOpacity > 0) {
-    ctx.fillStyle = `rgba(0,0,0,${overlayOpacity})`;
-    ctx.fillRect(0, 0, width, height);
-  }
-
-  if (blueTintEnabled && blueTintOpacity > 0) {
-    const { r, g, b } = VDID_BLUE_RGB;
-    ctx.fillStyle = `rgba(${r},${g},${b},${blueTintOpacity})`;
-    ctx.fillRect(0, 0, width, height);
-  }
+  applyImageEditOverlays(ctx, width, height, imageEdits);
 
   // Safe margins (typography / copyright)
   const marginX = width * 0.08;
@@ -1809,116 +1645,89 @@ function drawFormat(
 
   // Typography - positioned in lower third
   const titleMaxWidth = width - marginX * 2;
-  
-  // Calculate font size first
-  const baseTitleSize = Math.min(width, height) * 0.07;
-  const titleFontSize = Math.max(32, baseTitleSize);
-  
-  // Set up context for text measurement
-  ctx.fillStyle = "#FFFFFF";
-  ctx.textAlign = "left";
-  ctx.textBaseline = "top";
-  ctx.font = `500 ${titleFontSize}px Roboto, system-ui, sans-serif`;
-  
-  // Calculate all text dimensions first
-  const metaFontSize = titleFontSize * 0.45;
-  const subtitleFontSize = titleFontSize * 0.55;
-  const lineHeightTitle = titleFontSize * 1.2;
-  const lineHeightSubtitle = subtitleFontSize * 1.3;
-  
-  // Get event format text (styled like date/time)
+
+  const baseTitleSize = Math.max(32, Math.min(width, height) * 0.07);
+  const minTitleSize = 22;
+  const maxTitleSize = Math.round(baseTitleSize * 1.7);
+  const logoBottom = logoY + logoHeight;
+  const minDistanceFromLogo = height * 0.05;
+  const minTextStartY = logoBottom + minDistanceFromLogo;
+  const maxTextEndY = height - marginY;
+
   const eventFormatText =
     form.eventFormat === "other"
       ? form.eventFormatCustom
       : form.eventFormat !== "–"
         ? form.eventFormat
         : "";
-  
-  // Measure all text to calculate total height
-  ctx.font = `400 ${metaFontSize}px Roboto, system-ui, sans-serif`;
-  const eventFormatLines = eventFormatText
-    ? wrapText(ctx, eventFormatText, titleMaxWidth)
-    : [];
-  
-  ctx.font = `500 ${titleFontSize}px Roboto, system-ui, sans-serif`;
-  const titleLines = form.title.trim()
-    ? wrapText(ctx, form.title, titleMaxWidth)
-    : [];
-  ctx.font = `400 ${subtitleFontSize}px Roboto, system-ui, sans-serif`;
-  const subtitleLines = form.subtitle ? wrapText(ctx, form.subtitle, titleMaxWidth) : [];
-  
-  // Calculate spacing constants
-  const spacingAfterEventFormat = metaFontSize * 0.8; // spacing between event format and title
-  const spacingAfterTitle = subtitleFontSize * 0.8; // spacing between title and subtitle
-  const spacingAfterSubtitle = metaFontSize * 1.0; // spacing between subtitle and date/time
-  
-  // Calculate actual heights
-  const eventFormatHeight = eventFormatLines.length * metaFontSize * 1.2;
-  const titleHeight = titleLines.length * lineHeightTitle;
-  const subtitleHeight = subtitleLines.length * lineHeightSubtitle;
-  const metaHeight = metaFontSize * 1.4;
-  
-  // Calculate total height needed for all content
-  // For website formats, only count what will actually be rendered (event format + title)
-  let totalTextHeight = 0;
-  if (eventFormatText && eventFormatLines.length > 0) {
-    totalTextHeight += eventFormatHeight + spacingAfterEventFormat;
-  }
-  totalTextHeight += titleHeight;
-  
-  // Calculate meta parts for date/time/place
+
   const dateText = form.date ? format(form.date, "dd.MM.yyyy") : "";
   const metaParts = [dateText, form.time].filter(Boolean);
-  
-  // Add place or "Online" based on checkbox
   if (form.isOnline) {
     metaParts.push("Online");
   } else if (form.place) {
     metaParts.push(form.place);
   }
-  
-  // Only add subtitle and date/time for formats that include meta
-  if (cfg.includeMeta) {
-    if (form.subtitle && subtitleLines.length > 0) {
-      totalTextHeight +=
-        (titleLines.length > 0 ? spacingAfterTitle : 0) + subtitleHeight;
-    }
-    if (metaParts.length > 0) {
-      totalTextHeight += spacingAfterSubtitle + metaHeight;
-    }
+
+  const measureArgs = {
+    titleMaxWidth,
+    width,
+    height,
+    marginY,
+    minTextStartY,
+    includeMeta: cfg.includeMeta,
+    eventFormatText,
+    title: form.title,
+    subtitle: form.subtitle,
+    metaParts,
+  };
+
+  let titleFontSize = baseTitleSize;
+  let layout = measureKeyvisualTextLayout(ctx, {
+    ...measureArgs,
+    titleFontSize,
+  });
+
+  while (
+    titleFontSize > minTitleSize &&
+    layout.textStartY + layout.totalTextHeight > maxTextEndY
+  ) {
+    titleFontSize -= 1;
+    layout = measureKeyvisualTextLayout(ctx, { ...measureArgs, titleFontSize });
   }
-  
-  // Position text group in lower third, ensuring no overlap
-  // Minimum safe distance from logo
-  const logoBottom = logoY + logoHeight;
-  const minDistanceFromLogo = height * 0.05; // 5% of canvas height minimum
-  const minTextStartY = logoBottom + minDistanceFromLogo;
-  
-  // Target position: lower third (67% of height)
-  const lowerThirdStart = height * 0.67;
-  
-  // For formats with meta: position from bottom, but respect constraints
-  let textStartY: number;
-  if (cfg.includeMeta) {
-    // Calculate position from bottom
-    const bottomPosition = height - marginY - totalTextHeight;
-    // Use the higher of: bottom-calculated position, lower third start, or minimum from logo
-    textStartY = Math.max(bottomPosition, lowerThirdStart, minTextStartY);
-  } else {
-    // For website formats: fixed position in lower third, regardless of date/time input
-    textStartY = Math.max(lowerThirdStart, minTextStartY);
-  }
-  
-  // Ensure text doesn't overflow bottom (only check for formats with meta)
-  if (cfg.includeMeta) {
-    const maxTextEndY = height - marginY;
-    if (textStartY + totalTextHeight > maxTextEndY) {
-      // If content is too tall, position from bottom with margin
-      textStartY = maxTextEndY - totalTextHeight;
-      // But still respect minimum from logo
-      textStartY = Math.max(textStartY, minTextStartY);
+
+  while (titleFontSize < maxTitleSize) {
+    const nextLayout = measureKeyvisualTextLayout(ctx, {
+      ...measureArgs,
+      titleFontSize: titleFontSize + 1,
+    });
+    if (
+      nextLayout.textStartY + nextLayout.totalTextHeight > maxTextEndY ||
+      nextLayout.textStartY < minTextStartY
+    ) {
+      break;
     }
+    titleFontSize += 1;
+    layout = nextLayout;
   }
+
+  ctx.fillStyle = "#FFFFFF";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+
+  const {
+    metaFontSize,
+    subtitleFontSize,
+    lineHeightTitle,
+    lineHeightSubtitle,
+    eventFormatLines,
+    titleLines,
+    subtitleLines,
+    spacingAfterEventFormat,
+    spacingAfterTitle,
+    spacingAfterSubtitle,
+    textStartY,
+  } = layout;
 
   // Draw Event Format (above title, styled like date/time)
   let y = textStartY;
@@ -1932,7 +1741,7 @@ function drawFormat(
   }
 
   // Draw Title
-  ctx.font = `500 ${titleFontSize}px Roboto, system-ui, sans-serif`;
+  ctx.font = `500 ${layout.titleFontSize}px Roboto, system-ui, sans-serif`;
   for (const line of titleLines) {
     ctx.fillText(line, marginX, y);
     y += lineHeightTitle;

@@ -1,13 +1,16 @@
 /**
- * URL for a file in `/public`.
+ * Root-absolute URL for a file in `/public`.
  *
- * Uses a path **relative to the current page** (`./…`), so it works:
- * - locally (`/` → `/VDID_Logo_neg.svg`)
- * - on GitHub Pages with `basePath` (`/repo/` → `/repo/VDID_Logo_neg.svg`)
+ * Uses `NEXT_PUBLIC_BASE_PATH` (from `next.config.mjs`) so assets resolve
+ * correctly from any route — including nested pages like `/socials/`.
  *
- * Avoids relying on `NEXT_PUBLIC_BASE_PATH` being inlined identically everywhere.
+ * - Dev: `/VDID_Logo_neg.svg`
+ * - GitHub Pages: `/vdid-keyvis-gen/VDID_Logo_neg.svg`
  */
 export function publicFile(path: string): string {
   const clean = path.replace(/^\//, "");
-  return `./${clean}`;
+  const base = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+  if (!base) return `/${clean}`;
+  const normalizedBase = base.endsWith("/") ? base.slice(0, -1) : base;
+  return `${normalizedBase}/${clean}`;
 }
