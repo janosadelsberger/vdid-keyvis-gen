@@ -187,7 +187,7 @@ export function SlideTemplatePicker({
       <div
         role="radiogroup"
         aria-label="Vorlage wählen"
-        className="grid grid-cols-3 gap-2 sm:grid-cols-6 md:grid-cols-3 lg:grid-cols-6"
+        className="flex flex-nowrap gap-2 overflow-x-auto pb-1"
       >
         {SLIDE_TYPES_ORDER.map((type) => {
           const selected = type === value;
@@ -200,7 +200,7 @@ export function SlideTemplatePicker({
               aria-controls={`${id}-caption`}
               onClick={() => onChange(type)}
               className={cn(
-                "group flex flex-col items-center gap-1.5 rounded-lg border p-1.5 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vdidBlue focus-visible:ring-offset-1",
+                "group flex w-[5.75rem] shrink-0 flex-col items-center gap-1.5 rounded-lg border p-1.5 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vdidBlue focus-visible:ring-offset-1",
                 selected
                   ? "border-vdidBlue ring-2 ring-vdidBlue/30"
                   : "border-slate-200 hover:border-slate-400",
