@@ -23,6 +23,12 @@ import {
   drawBackgroundCover,
   type ImageEditSettings,
 } from "@/lib/image-edit";
+import { loadRecoloredLogo } from "@/lib/lab-logo";
+import {
+  pickLogoVariant,
+  sampleRegionAverageLuminance,
+  type LogoVariant,
+} from "@/lib/logo-contrast";
 
 type EventFormState = {
   eventFormat: string;
@@ -119,6 +125,7 @@ type BackgroundLoadState = "idle" | "loading" | "ready";
 type FormatKey =
   | "websitePreview"
   | "websiteHeader"
+  | "photoFullBleed"
   | "instagramGrid"
   | "instagramStory"
   | "linkedinSquare"
@@ -126,11 +133,14 @@ type FormatKey =
   | "eventbriteHeader"
   | "zoomBackground";
 
+type FormatLayout = "keyvisual" | "photoLogo";
+
 type FormatCanvasConfig = {
   label: string;
   width: number;
   height: number;
   includeMeta: boolean;
+  layout?: FormatLayout;
   /** Fraction of canvas height: extra top inset for platform UI (e.g. Instagram Story). */
   topUiSafeInsetRatio?: number;
 };
@@ -147,6 +157,13 @@ const FORMAT_CONFIG: Record<FormatKey, FormatCanvasConfig> = {
     width: 1920,
     height: 800,
     includeMeta: false,
+  },
+  photoFullBleed: {
+    label: "Photo Full Bleed 1080×1350",
+    width: 1080,
+    height: 1350,
+    includeMeta: false,
+    layout: "photoLogo",
   },
   instagramGrid: {
     label: "Instagram Grid 1080×1350",
@@ -197,6 +214,7 @@ const VDID_LOGO_MARK_SQUARE = 100;
 const FORMAT_EXPORT_SLUG: Record<FormatKey, string> = {
   websitePreview: "Website-Preview-800x800",
   websiteHeader: "Website-Header-1920x800",
+  photoFullBleed: "Photo-Full-Bleed-1080x1350",
   instagramGrid: "Instagram-Grid-1080x1350",
   instagramStory: "Instagram-Story-1080x1920",
   linkedinSquare: "LinkedIn-1080x1080",
@@ -207,10 +225,8 @@ const FORMAT_EXPORT_SLUG: Record<FormatKey, string> = {
 
 const ALL_FORMAT_KEYS = Object.keys(FORMAT_CONFIG) as FormatKey[];
 
-function allKeyvisualFormatsEnabled(): Record<FormatKey, boolean> {
-  return Object.fromEntries(
-    ALL_FORMAT_KEYS.map((k) => [k, true]),
-  ) as Record<FormatKey, boolean>;
+function isPhotoLogoFormat(key: FormatKey): boolean {
+  return FORMAT_CONFIG[key].layout === "photoLogo";
 }
 
 function RequiredMark() {
@@ -571,6 +587,7 @@ export function EventAssetGenerator() {
     React.useState<EventFormState>(INITIAL_FORM_STATE);
   const [formHydrated, setFormHydrated] = React.useState(false);
   const [logoLoaded, setLogoLoaded] = React.useState(false);
+  const [darkLogoLoaded, setDarkLogoLoaded] = React.useState(false);
   /** Set when loading fails so we can show the resolved URL (local vs. deployed). */
   const [logoLoadErrorUrl, setLogoLoadErrorUrl] = React.useState<string | null>(
     null,
@@ -578,6 +595,7 @@ export function EventAssetGenerator() {
   /** Nach Klick auf ZIP/PNG, wenn noch Pflichtfelder fehlen */
   const [exportHint, setExportHint] = React.useState<string | null>(null);
   const logoRef = React.useRef<HTMLImageElement | null>(null);
+  const darkLogoRef = React.useRef<HTMLImageElement | null>(null);
   const canvasRefs = React.useRef<
     Partial<Record<FormatKey, HTMLCanvasElement | null>>
   >({});
@@ -602,24 +620,6 @@ export function EventAssetGenerator() {
   } | null>(null);
   const [captionTipsModal, setCaptionTipsModal] =
     React.useState<CaptionTipsPlatform | null>(null);
-  const [formatEnabled, setFormatEnabled] = React.useState<
-    Record<FormatKey, boolean>
-  >(allKeyvisualFormatsEnabled);
-
-  const enabledFormatKeys = React.useMemo(
-    () => ALL_FORMAT_KEYS.filter((key) => formatEnabled[key]),
-    [formatEnabled],
-  );
-
-  const toggleFormatEnabled = (key: FormatKey, checked: boolean) => {
-    setFormatEnabled((prev) => {
-      if (!checked) {
-        const enabledCount = ALL_FORMAT_KEYS.filter((k) => prev[k]).length;
-        if (enabledCount <= 1) return prev;
-      }
-      return { ...prev, [key]: checked };
-    });
-  };
 
   const handleCopyAllCaptionPrompts = React.useCallback(async () => {
     try {
@@ -651,22 +651,41 @@ export function EventAssetGenerator() {
     }
   }, [form, formHydrated]);
 
-  // Load logo once from /public (URL resolves via publicFile — works with basePath)
+  // Load white + dark logo variants from /public (URL resolves via publicFile — works with basePath)
   React.useEffect(() => {
     const url = publicFile("/VDID_Logo_neg.svg");
     setLogoLoadErrorUrl(null);
+    let cancelled = false;
+
     const img = new Image();
     img.onload = () => {
+      if (cancelled) return;
       logoRef.current = img;
       setLogoLoaded(true);
       setLogoLoadErrorUrl(null);
     };
     img.onerror = () => {
+      if (cancelled) return;
       console.error("Failed to load logo from:", url);
       setLogoLoaded(false);
       setLogoLoadErrorUrl(url);
     };
     img.src = url;
+
+    void loadRecoloredLogo("#1A1A1A")
+      .then((dark) => {
+        if (cancelled) return;
+        darkLogoRef.current = dark;
+        setDarkLogoLoaded(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setDarkLogoLoaded(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   React.useEffect(() => {
@@ -774,13 +793,14 @@ export function EventAssetGenerator() {
   };
 
   const renderAll = React.useCallback(() => {
-    const logo = logoRef.current;
-    if (!logo) return;
+    const lightLogo = logoRef.current;
+    const darkLogo = darkLogoRef.current;
+    if (!lightLogo || !darkLogo) return;
 
     const backgroundImage =
       backgroundLoadState === "ready" ? backgroundImageRef.current : null;
 
-    (enabledFormatKeys).forEach((key) => {
+    ALL_FORMAT_KEYS.forEach((key) => {
       const canvas = canvasRefs.current[key];
       if (!canvas) return;
       const cfg = FORMAT_CONFIG[key];
@@ -789,28 +809,30 @@ export function EventAssetGenerator() {
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
 
-      drawFormat(canvas, ctx, cfg, form, logo, {
-        backgroundImage,
-        imageEdits: imageEditSettings,
-      });
+      drawFormat(
+        canvas,
+        ctx,
+        cfg,
+        form,
+        { lightLogo, darkLogo },
+        {
+          backgroundImage,
+          imageEdits: imageEditSettings,
+        },
+      );
     });
-  }, [
-    form,
-    backgroundLoadState,
-    imageEditSettings,
-    enabledFormatKeys,
-  ]);
+  }, [form, backgroundLoadState, imageEditSettings, ALL_FORMAT_KEYS]);
 
   React.useLayoutEffect(() => {
-    if (logoLoaded) {
+    if (logoLoaded && darkLogoLoaded) {
       renderAll();
     }
-  }, [logoLoaded, renderAll]);
+  }, [logoLoaded, darkLogoLoaded, renderAll]);
 
   const setCanvasRef = React.useCallback(
     (key: FormatKey) => (el: HTMLCanvasElement | null) => {
       canvasRefs.current[key] = el;
-      if (el && logoRef.current) {
+      if (el && logoRef.current && darkLogoRef.current) {
         renderAll();
       }
     },
@@ -838,7 +860,9 @@ export function EventAssetGenerator() {
   };
 
   const assetsReady =
-    logoLoaded && backgroundLoadState !== "loading";
+    logoLoaded &&
+    darkLogoLoaded &&
+    backgroundLoadState !== "loading";
 
   const zipTextsReady =
     form.title.trim().length > 0 &&
@@ -848,7 +872,7 @@ export function EventAssetGenerator() {
     form.copyright.trim().length > 0;
 
   const zipDownloadReady =
-    assetsReady && zipTextsReady && enabledFormatKeys.length > 0;
+    assetsReady && zipTextsReady;
 
   React.useEffect(() => {
     setExportHint(null);
@@ -856,8 +880,14 @@ export function EventAssetGenerator() {
 
   const collectZipMissing = React.useCallback((): string[] => {
     const missing: string[] = [];
-    if (!logoLoaded) missing.push("Logo");
+    if (!logoLoaded || !darkLogoLoaded) missing.push("Logo");
     if (backgroundLoadState === "loading") missing.push("Hintergrund lädt noch");
+    if (
+      ALL_FORMAT_KEYS.some(isPhotoLogoFormat) &&
+      backgroundLoadState !== "ready"
+    ) {
+      missing.push("Hintergrundbild (für Foto-Format)");
+    }
     if (!form.title.trim()) missing.push("Titel (im Bild)");
     if (!form.copyright.trim()) missing.push("Copyright (Bild)");
     if (!form.captionWebsite.trim()) missing.push("Caption Website");
@@ -866,7 +896,9 @@ export function EventAssetGenerator() {
     return missing;
   }, [
     logoLoaded,
+    darkLogoLoaded,
     backgroundLoadState,
+    ALL_FORMAT_KEYS,
     form.title,
     form.copyright,
     form.captionWebsite,
@@ -874,14 +906,20 @@ export function EventAssetGenerator() {
     form.captionLinkedIn,
   ]);
 
-  const collectPngMissing = React.useCallback((): string[] => {
-    const missing: string[] = [];
-    if (!logoLoaded) missing.push("Logo");
-    if (backgroundLoadState === "loading") missing.push("Hintergrund lädt noch");
-    if (!form.title.trim()) missing.push("Titel (im Bild)");
-    if (!form.copyright.trim()) missing.push("Copyright (Bild)");
-    return missing;
-  }, [logoLoaded, backgroundLoadState, form.title, form.copyright]);
+  const collectPngMissing = React.useCallback(
+    (key?: FormatKey): string[] => {
+      const missing: string[] = [];
+      if (!logoLoaded || !darkLogoLoaded) missing.push("Logo");
+      if (backgroundLoadState === "loading") missing.push("Hintergrund lädt noch");
+      if (key && isPhotoLogoFormat(key) && backgroundLoadState !== "ready") {
+        missing.push("Hintergrundbild (für Foto-Format)");
+      }
+      if (!form.title.trim()) missing.push("Titel (im Bild)");
+      if (!form.copyright.trim()) missing.push("Copyright (Bild)");
+      return missing;
+    },
+    [logoLoaded, darkLogoLoaded, backgroundLoadState, form.title, form.copyright],
+  );
 
   const handleDownloadAll = async () => {
     const zip = new JSZip();
@@ -900,7 +938,7 @@ export function EventAssetGenerator() {
     }[] = [];
 
     // Add each canvas as a PNG to the zip
-    enabledFormatKeys.forEach((key) => {
+    ALL_FORMAT_KEYS.forEach((key) => {
       const canvas = canvasRefs.current[key];
       if (canvas) {
         const dataUrl = canvas.toDataURL("image/png");
@@ -1026,7 +1064,6 @@ export function EventAssetGenerator() {
     clearBackgroundImage();
     setImageEditSettings(DEFAULT_IMAGE_EDIT_SETTINGS);
     setImageEditModalOpen(false);
-    setFormatEnabled(allKeyvisualFormatsEnabled());
     setExportHint(null);
     try {
       localStorage.removeItem(FORM_STORAGE_KEY);
@@ -1036,10 +1073,6 @@ export function EventAssetGenerator() {
   };
 
   const handleZipButtonClick = () => {
-    if (enabledFormatKeys.length === 0) {
-      setExportHint("Mindestens ein Bildformat auswählen.");
-      return;
-    }
     const missing = collectZipMissing();
     if (missing.length > 0) {
       setExportHint(`Es fehlen noch: ${missing.join(", ")}.`);
@@ -1050,7 +1083,7 @@ export function EventAssetGenerator() {
   };
 
   const handlePngButtonClick = (key: FormatKey) => {
-    const missing = collectPngMissing();
+    const missing = collectPngMissing(key);
     if (missing.length > 0) {
       setExportHint(`Für PNG-Download fehlt: ${missing.join(", ")}.`);
       return;
@@ -1306,37 +1339,14 @@ export function EventAssetGenerator() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Export-Formate</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-wrap gap-x-6 gap-y-3">
-            {ALL_FORMAT_KEYS.map((key) => (
-              <div key={key} className="flex items-center gap-2">
-                <Checkbox
-                  id={`format-${key}`}
-                  checked={formatEnabled[key]}
-                  onChange={(e) =>
-                    toggleFormatEnabled(key, e.target.checked)
-                  }
-                />
-                <Label htmlFor={`format-${key}`} className="cursor-pointer">
-                  {FORMAT_CONFIG[key].label}
-                </Label>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-
       <div className="grid gap-4 lg:grid-cols-2">
-        {enabledFormatKeys.map((key) => {
+        {ALL_FORMAT_KEYS.map((key) => {
           const cfg = FORMAT_CONFIG[key];
           const pngReady =
             assetsReady &&
             form.title.trim().length > 0 &&
-            form.copyright.trim().length > 0;
+            form.copyright.trim().length > 0 &&
+            (!isPhotoLogoFormat(key) || backgroundLoadState === "ready");
           return (
             <Card key={key}>
               <CardHeader>
@@ -1362,7 +1372,7 @@ export function EventAssetGenerator() {
                       type="button"
                       className="group relative cursor-zoom-in rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vdidBlue focus-visible:ring-offset-2"
                       onClick={() => openFormatPreviewLightbox(key)}
-                      disabled={!logoLoaded}
+                      disabled={!logoLoaded || !darkLogoLoaded}
                       aria-label={`${cfg.label} in groß anzeigen`}
                     >
                       <canvas
@@ -1396,11 +1406,6 @@ export function EventAssetGenerator() {
               )}
             >
               Alle Assets als ZIP herunterladen
-              {enabledFormatKeys.length < ALL_FORMAT_KEYS.length && (
-                <span className="ml-1 font-normal opacity-80">
-                  ({enabledFormatKeys.length} Formate)
-                </span>
-              )}
             </Button>
             <Button
               type="button"
@@ -1472,6 +1477,118 @@ type BackgroundDrawOptions = {
   backgroundImage: HTMLImageElement | null;
   imageEdits: ImageEditSettings;
 };
+
+type LogoAssets = {
+  lightLogo: HTMLImageElement;
+  darkLogo: HTMLImageElement;
+};
+
+type LogoPlacement = {
+  logoX: number;
+  logoY: number;
+  logoWidth: number;
+  logoHeight: number;
+  unitSquarePx: number;
+};
+
+function drawCanvasBackground(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  background: BackgroundDrawOptions,
+) {
+  const { backgroundImage, imageEdits } = background;
+  if (backgroundImage && backgroundImage.complete) {
+    drawBackgroundCover(
+      ctx,
+      width,
+      height,
+      backgroundImage,
+      imageEdits.focalPoint.x,
+      imageEdits.focalPoint.y,
+      imageEdits.grayscaleEnabled,
+    );
+  } else {
+    ctx.fillStyle = "#0A2CD9";
+    ctx.fillRect(0, 0, width, height);
+  }
+  applyImageEditOverlays(ctx, width, height, imageEdits);
+}
+
+function computeLogoPlacement(
+  height: number,
+  logo: HTMLImageElement,
+  topUiSafeInsetRatio?: number,
+): LogoPlacement {
+  const lnw = logo.naturalWidth || logo.width;
+  const lnh = logo.naturalHeight || logo.height;
+  const logoHeight = Math.min(height * 0.16, 160);
+  const logoAspect = lnw / lnh || 1;
+  const logoWidth = logoHeight * logoAspect;
+  const lnhSafe = lnh > 0 ? lnh : VDID_LOGO_VIEWBOX_SIZE;
+  const unitSquarePx = logoHeight * (VDID_LOGO_MARK_SQUARE / lnhSafe);
+  const storyTopSafePx =
+    topUiSafeInsetRatio != null && topUiSafeInsetRatio > 0
+      ? height * topUiSafeInsetRatio
+      : 0;
+  return {
+    logoX: unitSquarePx,
+    logoY: unitSquarePx + storyTopSafePx,
+    logoWidth,
+    logoHeight,
+    unitSquarePx,
+  };
+}
+
+function drawAdaptiveLogo(
+  ctx: CanvasRenderingContext2D,
+  cfg: FormatCanvasConfig,
+  logos: LogoAssets,
+) {
+  const { height } = cfg;
+  const placement = computeLogoPlacement(
+    height,
+    logos.lightLogo,
+    cfg.topUiSafeInsetRatio,
+  );
+  const { logoX, logoY, logoWidth, logoHeight, unitSquarePx } = placement;
+
+  const samplePad = unitSquarePx * 0.35;
+  const luminance = sampleRegionAverageLuminance(
+    ctx,
+    Math.max(0, logoX - samplePad),
+    Math.max(0, logoY - samplePad),
+    logoWidth + samplePad * 2,
+    logoHeight + samplePad * 2,
+  );
+  const variant = pickLogoVariant(luminance);
+  const logo = variant === "light" ? logos.lightLogo : logos.darkLogo;
+  ctx.drawImage(logo, logoX, logoY, logoWidth, logoHeight);
+  return variant;
+}
+
+function drawPhotoLogoFormat(
+  ctx: CanvasRenderingContext2D,
+  cfg: FormatCanvasConfig,
+  form: EventFormState,
+  logos: LogoAssets,
+  background: BackgroundDrawOptions,
+) {
+  const { width, height } = cfg;
+  drawCanvasBackground(ctx, width, height, background);
+  const marginX = width * 0.08;
+  const marginY = height * 0.12;
+  const variant = drawAdaptiveLogo(ctx, cfg, logos);
+  drawCopyrightOnCanvas(
+    ctx,
+    width,
+    height,
+    form.copyright,
+    marginX,
+    marginY,
+    variant,
+  );
+}
 
 type KeyvisualTextLayout = {
   titleFontSize: number;
@@ -1598,61 +1715,39 @@ function drawFormat(
   ctx: CanvasRenderingContext2D,
   cfg: FormatCanvasConfig,
   form: EventFormState,
-  logo: HTMLImageElement,
+  logos: LogoAssets,
   background: BackgroundDrawOptions,
 ) {
   const { width, height } = cfg;
-  const { backgroundImage, imageEdits } = background;
 
-  // Background: photo with focal cover, or solid VDID blue
-  if (backgroundImage && backgroundImage.complete) {
-    drawBackgroundCover(
-      ctx,
-      width,
-      height,
-      backgroundImage,
-      imageEdits.focalPoint.x,
-      imageEdits.focalPoint.y,
-      imageEdits.grayscaleEnabled,
-    );
-  } else {
-    ctx.fillStyle = "#0A2CD9";
-    ctx.fillRect(0, 0, width, height);
+  if (cfg.layout === "photoLogo") {
+    drawPhotoLogoFormat(ctx, cfg, form, logos, background);
+    return;
   }
 
-  applyImageEditOverlays(ctx, width, height, imageEdits);
+  drawCanvasBackground(ctx, width, height, background);
 
   // Safe margins (typography / copyright)
   const marginX = width * 0.08;
   const marginY = height * 0.12;
 
-  // Logo: offset from canvas corner = one VDID mark-square side at current scale,
-  // plus optional IG Story top safe area for system UI.
-  const lnw = logo.naturalWidth || logo.width;
-  const lnh = logo.naturalHeight || logo.height;
-  const logoHeight = Math.min(height * 0.16, 160);
-  const logoAspect = lnw / lnh || 1;
-  const logoWidth = logoHeight * logoAspect;
-  const lnhSafe = lnh > 0 ? lnh : VDID_LOGO_VIEWBOX_SIZE;
-  const unitSquarePx = logoHeight * (VDID_LOGO_MARK_SQUARE / lnhSafe);
-  const storyTopSafePx =
-    cfg.topUiSafeInsetRatio != null && cfg.topUiSafeInsetRatio > 0
-      ? height * cfg.topUiSafeInsetRatio
-      : 0;
-  const logoX = unitSquarePx;
-  const logoY = unitSquarePx + storyTopSafePx;
+  const logo = logos.lightLogo;
+  const { logoX, logoY, logoWidth, logoHeight } = computeLogoPlacement(
+    height,
+    logo,
+    cfg.topUiSafeInsetRatio,
+  );
   ctx.drawImage(logo, logoX, logoY, logoWidth, logoHeight);
 
-  // Typography - positioned in lower third
+  const logoBottom = logoY + logoHeight;
+  const minDistanceFromLogo = height * 0.05;
+  const minTextStartY = logoBottom + minDistanceFromLogo;
+  const maxTextEndY = height - marginY;
   const titleMaxWidth = width - marginX * 2;
 
   const baseTitleSize = Math.max(32, Math.min(width, height) * 0.07);
   const minTitleSize = 22;
   const maxTitleSize = Math.round(baseTitleSize * 1.7);
-  const logoBottom = logoY + logoHeight;
-  const minDistanceFromLogo = height * 0.05;
-  const minTextStartY = logoBottom + minDistanceFromLogo;
-  const maxTextEndY = height - marginY;
 
   const eventFormatText =
     form.eventFormat === "other"
@@ -1788,6 +1883,7 @@ function drawCopyrightOnCanvas(
   text: string,
   _marginX: number,
   _marginY: number,
+  variant: LogoVariant = "light",
 ) {
   const trimmed = text.trim();
   if (!trimmed) return;
@@ -1797,7 +1893,8 @@ function drawCopyrightOnCanvas(
   const maxSpan = Math.max(40, height - 8);
 
   ctx.save();
-  ctx.fillStyle = "rgba(255,255,255,0.5)";
+  ctx.fillStyle =
+    variant === "light" ? "rgba(255,255,255,0.5)" : "rgba(26,26,26,0.5)";
 
   let fontSize = Math.max(10, Math.min(width, height) * 0.017);
   const minSize = 8;

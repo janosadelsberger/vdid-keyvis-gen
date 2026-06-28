@@ -80,7 +80,7 @@ export type LabFormatPickerProps = {
 
 export function LabFormatPicker({ enabled, onToggle }: LabFormatPickerProps) {
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    <div className="flex flex-wrap gap-3">
       {LAB_FORMAT_KEYS.map((key) => {
         const spec = FORMAT_THUMBS[key];
         const isOn = enabled[key];
@@ -91,29 +91,27 @@ export function LabFormatPicker({ enabled, onToggle }: LabFormatPickerProps) {
             key={key}
             htmlFor={`lab-format-${key}`}
             className={cn(
-              "group flex cursor-pointer flex-col items-center gap-2 rounded-lg border p-2 transition-colors",
+              "group flex w-fit shrink-0 cursor-pointer flex-col items-center gap-2 rounded-lg border p-2 transition-colors",
               isOn
                 ? "border-vdidBlue/50 bg-blue-50/60 ring-1 ring-vdidBlue/20"
                 : "border-slate-200 bg-white hover:border-slate-300",
             )}
           >
-            <div className="flex w-full justify-center">
-              <div
-                className="relative overflow-hidden rounded-md border border-slate-200/80 shadow-sm"
-                style={{
-                  width: thumbWidth,
-                  height: THUMB_HEIGHT,
-                }}
-              >
+            <div
+              className="relative overflow-hidden rounded-md border border-slate-200/80 shadow-sm"
+              style={{
+                width: thumbWidth,
+                height: THUMB_HEIGHT,
+              }}
+            >
                 <FormatThumbnail formatKey={key} spec={spec} />
                 <Checkbox
                   id={`lab-format-${key}`}
                   checked={isOn}
                   onChange={(e) => onToggle(key, e.target.checked)}
                   className="absolute right-1 top-1 bg-white/90 shadow-sm"
-                  aria-label={spec.ariaLabel}
-                />
-              </div>
+                aria-label={spec.ariaLabel}
+              />
             </div>
             <span className="text-[11px] font-medium text-slate-600">
               {spec.shortLabel}

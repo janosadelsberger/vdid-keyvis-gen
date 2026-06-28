@@ -18,6 +18,7 @@ export type SlideType =
   | "quote"
   | "cta"
   | "eventPhoto"
+  | "fullImage"
   | "coBranded"
   | "freeform";
 
@@ -45,10 +46,16 @@ export type RenderImage = CanvasImageSource & {
 };
 
 export type RenderAssets = {
+  /** Dark logo for light backgrounds (default for text slides). */
   logo: RenderImage;
+  /** White logo for dark backgrounds (full-image slides). */
+  logoWhite?: RenderImage | null;
   slideImages: Map<string, RenderImage>;
   partnerLogos: Map<string, RenderImage>;
 };
+
+/** Luminance threshold: below → white logo, above → dark logo. */
+const LOGO_REGION_LUMINANCE_THRESHOLD = 0.45;
 
 export type SlideDims = {
   width: number;
@@ -111,10 +118,72 @@ function getLayout(
 /**
  * Draw the full VDID logo lockup (SVG as-is, only recolored via {@link loadRecoloredLogo}).
  */
+function logoRegion(layout: LayoutMetrics) {
+  return {
+    x: layout.marginX,
+    y: layout.height - layout.marginY - layout.logoHeight,
+    w: layout.logoWidth,
+    h: layout.logoHeight,
+  };
+}
+
 function drawLogo(ctx: Ctx, logo: RenderImage, layout: LayoutMetrics) {
-  const x = layout.marginX;
-  const y = layout.height - layout.marginY - layout.logoHeight;
-  ctx.drawImage(logo, x, y, layout.logoWidth, layout.logoHeight);
+  const { x, y, w, h } = logoRegion(layout);
+  ctx.drawImage(logo, x, y, w, h);
+}
+
+/**
+ * Sample average relative luminance (0–1) from a canvas region.
+ * Falls back to 1 (light) if pixels are unreadable (e.g. tainted canvas).
+ */
+function sampleCanvasLuminance(
+  ctx: Ctx,
+  region: { x: number; y: number; w: number; h: number },
+): number | null {
+  const ix = Math.max(0, Math.floor(region.x));
+  const iy = Math.max(0, Math.floor(region.y));
+  const iw = Math.min(Math.ceil(region.w), ctx.canvas.width - ix);
+  const ih = Math.min(Math.ceil(region.h), ctx.canvas.height - iy);
+  if (iw <= 0 || ih <= 0) return null;
+
+  let data: ImageData;
+  try {
+    data = ctx.getImageData(ix, iy, iw, ih);
+  } catch {
+    return null;
+  }
+
+  const step = Math.max(1, Math.floor(Math.min(iw, ih) / 10));
+  let sum = 0;
+  let count = 0;
+  for (let py = 0; py < ih; py += step) {
+    for (let px = 0; px < iw; px += step) {
+      const i = (py * iw + px) * 4;
+      const r = data.data[i];
+      const g = data.data[i + 1];
+      const b = data.data[i + 2];
+      sum += (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+      count++;
+    }
+  }
+  return count > 0 ? sum / count : null;
+}
+
+function pickLogoForRegion(
+  ctx: Ctx,
+  layout: LayoutMetrics,
+  logoDark: RenderImage,
+  logoWhite: RenderImage | null | undefined,
+): RenderImage {
+  const luminance = sampleCanvasLuminance(ctx, logoRegion(layout));
+  if (
+    luminance != null &&
+    luminance < LOGO_REGION_LUMINANCE_THRESHOLD &&
+    logoWhite
+  ) {
+    return logoWhite;
+  }
+  return logoDark;
 }
 
 function drawFormatLabel(
@@ -698,6 +767,27 @@ function drawFreeformSlide(
   drawLogo(ctx, logo, layout);
 }
 
+function drawFullImageSlide(
+  ctx: Ctx,
+  slide: LabSlide,
+  layout: LayoutMetrics,
+  logoDark: RenderImage,
+  logoWhite: RenderImage | null | undefined,
+  slideImage: RenderImage | null,
+) {
+  const w = layout.width;
+  const h = layout.height;
+
+  if (slideImage) {
+    drawSlideImage(ctx, slideImage, 0, 0, w, h, slide.imageEdits);
+  } else {
+    drawImagePlaceholder(ctx, layout, 0, 0, w, h);
+  }
+
+  const logo = pickLogoForRegion(ctx, layout, logoDark, logoWhite);
+  drawLogo(ctx, logo, layout);
+}
+
 /** Render a slide onto an existing 2D context of the given pixel dimensions. */
 export function renderLabSlideToContext(
   ctx: Ctx,
@@ -705,9 +795,6 @@ export function renderLabSlideToContext(
   dims: SlideDims,
   assets: RenderAssets,
 ): void {
-  ctx.fillStyle = LAB_BG;
-  ctx.fillRect(0, 0, dims.width, dims.height);
-
   const layout = getLayout(
     dims.width,
     dims.height,
@@ -722,6 +809,11 @@ export function renderLabSlideToContext(
     ? assets.partnerLogos.get(slide.partnerLogoUrl) ?? null
     : null;
 
+  if (slide.type !== "fullImage") {
+    ctx.fillStyle = LAB_BG;
+    ctx.fillRect(0, 0, dims.width, dims.height);
+  }
+
   switch (slide.type) {
     case "title":
       drawTitleSlide(ctx, slide, layout, assets.logo);
@@ -734,6 +826,16 @@ export function renderLabSlideToContext(
       break;
     case "eventPhoto":
       drawEventPhotoSlide(ctx, slide, layout, assets.logo, slideImage);
+      break;
+    case "fullImage":
+      drawFullImageSlide(
+        ctx,
+        slide,
+        layout,
+        assets.logo,
+        assets.logoWhite,
+        slideImage,
+      );
       break;
     case "coBranded":
       drawCoBrandedSlide(

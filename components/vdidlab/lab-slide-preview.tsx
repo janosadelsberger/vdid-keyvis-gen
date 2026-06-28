@@ -14,6 +14,7 @@ export type LabSlidePreviewProps = {
   height: number;
   topUiSafeInsetRatio?: number;
   logoRef: React.RefObject<HTMLImageElement | null>;
+  logoWhiteRef?: React.RefObject<HTMLImageElement | null>;
   slideImagesRef: React.RefObject<Map<string, HTMLImageElement>>;
   partnerLogosRef: React.RefObject<Map<string, HTMLImageElement>>;
   logoLoaded: boolean;
@@ -37,6 +38,7 @@ export const LabSlidePreview = React.forwardRef<
     height,
     topUiSafeInsetRatio,
     logoRef,
+    logoWhiteRef,
     slideImagesRef,
     partnerLogosRef,
     logoLoaded,
@@ -66,6 +68,7 @@ export const LabSlidePreview = React.forwardRef<
 
     const assets: RenderAssets = {
       logo,
+      logoWhite: logoWhiteRef?.current ?? null,
       slideImages: slideImagesRef.current ?? new Map(),
       partnerLogos: partnerLogosRef.current ?? new Map(),
     };
@@ -84,6 +87,7 @@ export const LabSlidePreview = React.forwardRef<
     logoLoaded,
     renderRevision,
     logoRef,
+    logoWhiteRef,
     slideImagesRef,
     partnerLogosRef,
   ]);
@@ -107,8 +111,11 @@ export const LabSlidePreview = React.forwardRef<
     <div className={cn("flex justify-center", className)}>
       <button
         type="button"
-        className="group relative cursor-zoom-in rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vdidBlue disabled:cursor-not-allowed disabled:opacity-60"
-        onClick={onClick}
+        className="relative cursor-pointer rounded outline-none disabled:cursor-not-allowed disabled:opacity-60"
+        onClick={(e) => {
+          onClick();
+          e.currentTarget.blur();
+        }}
         disabled={disabled}
         aria-label={ariaLabel}
       >

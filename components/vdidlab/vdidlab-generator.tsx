@@ -6,10 +6,11 @@ import JSZip from "jszip";
 import { jsPDF } from "jspdf";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { loadRecoloredLogo } from "@/lib/lab-logo";
+import { loadRecoloredLogo, loadWhiteLogo } from "@/lib/lab-logo";
 import { exportAssetBasename } from "@/lib/export-naming";
 import {
   addCaptionsToZip,
@@ -25,6 +26,7 @@ import { LabFormatPicker } from "@/components/vdidlab/lab-format-picker";
 import { cn } from "@/lib/utils";
 import { ImageDropZone } from "@/components/image-drop-zone";
 import { ImageEditModal } from "@/components/image-edit-modal";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import {
   DEFAULT_IMAGE_EDIT_SETTINGS,
 } from "@/lib/image-edit";
@@ -94,6 +96,15 @@ const FORMAT_CONFIG: Record<LabFormatKey, FormatConfig> = {
   },
 };
 
+const PREVIEW_FORMAT_TAB_LABELS: Record<
+  Exclude<LabFormatKey, "pdf">,
+  string
+> = {
+  instagramPost: "IG Post",
+  instagramStory: "IG Story",
+  linkedin: "LinkedIn",
+};
+
 const ALL_LAB_FORMAT_KEYS = LAB_FORMAT_KEYS;
 
 function allLabFormatsEnabled(): Record<LabFormatKey, boolean> {
@@ -122,35 +133,36 @@ function createSlide(type: SlideType): LabSlide {
   const defaults: Partial<Record<SlideType, Partial<LabSlide>>> = {
     title: {
       formatLabel: "VDID Fortbildung",
-      heading: "Lebenszyklus-analyse für Designer",
-      dateLine: "20.05.2026 | 9:00–13:00",
+      heading: "VDID Event",
+      dateLine: "01.01.2026 | 10:00",
     },
     quote: {
-      heading: "Der Workshop ist",
-      body: "„der perfekte Einstieg in die Thematik **KI-Sketching**, das lokal genutzt werden kann. Klare Empfehlung!“",
-      name: "Arthur Homa",
-      role: "Produkt- und Industriedesigner",
+      heading: "Zum Event sagt",
+      body: "„Ein **überzeugendes** Zitat zur Veranstaltung.“",
+      name: "Name",
+      role: "Rolle",
     },
     cta: {
-      heading: "Jetzt anmelden!",
-      body: "Im Mai-Workshop als Einsteiger:in durchstarten und im Juni in der Fortgeschrittenen-Fortbildung fit werden!",
+      heading: "Jetzt anmelden",
+      body: "Kurzer Text mit Handlungsaufforderung zum Event.",
       contact: "Anmeldungen an **mail@vdid.de**",
     },
     eventPhoto: {
       formatLabel: "VDID Design.Wissen.Diskurs.",
-      heading: "Sustainable Products",
-      dateLine: "05.05.2026 | 18–20 Uhr",
-      name: "mit Sari Dahle und Theo Röder",
+      heading: "VDID Event",
+      dateLine: "01.01.2026 | 18:00",
+      name: "mit Name",
     },
+    fullImage: {},
     coBranded: {
-      formatLabel: "14. VDID Designer's Breakfast",
-      heading: "Designing the loop",
-      dateLine: "09.05.2026 | 10:00–14:00",
+      formatLabel: "VDID Design.Wissen.Diskurs.",
+      heading: "VDID Event",
+      dateLine: "01.01.2026 | 10:00",
     },
     freeform: {
-      heading: "CuRe",
-      body: "kreislauffähige Unterarmgehstütze",
-      name: "Sari Dahle",
+      heading: "Titel",
+      body: "Text",
+      name: "Name",
     },
   };
 
@@ -284,6 +296,7 @@ function applySlideTypeChange(slide: LabSlide, newType: SlideType): LabSlide {
   const defaults = createSlide(newType);
   const supportsImage =
     newType === "eventPhoto" ||
+    newType === "fullImage" ||
     newType === "coBranded" ||
     newType === "freeform";
   const supportsPartner = newType === "coBranded";
@@ -373,8 +386,10 @@ export function VdidLabGenerator() {
   const [logoLoaded, setLogoLoaded] = React.useState(false);
   const [logoError, setLogoError] = React.useState<string | null>(null);
   const logoRef = React.useRef<HTMLImageElement | null>(null);
+  const logoWhiteRef = React.useRef<HTMLImageElement | null>(null);
   const slideImagesRef = React.useRef<Map<string, HTMLImageElement>>(new Map());
   const partnerLogosRef = React.useRef<Map<string, HTMLImageElement>>(new Map());
+  const postFormRef = React.useRef<HTMLDivElement>(null);
   const slidesRef = React.useRef(slides);
   slidesRef.current = slides;
   const [lightboxUrl, setLightboxUrl] = React.useState<string | null>(null);
@@ -383,6 +398,7 @@ export function VdidLabGenerator() {
     Record<LabFormatKey, boolean>
   >(allLabFormatsEnabled);
   const [photoEditModalOpen, setPhotoEditModalOpen] = React.useState(false);
+  const [slideDeleteId, setSlideDeleteId] = React.useState<string | null>(null);
   const [photoNaturalSize, setPhotoNaturalSize] = React.useState<{
     width: number;
     height: number;
@@ -399,9 +415,10 @@ export function VdidLabGenerator() {
   );
 
   const previewFormatOptions = React.useMemo(
-    () =>
+    (): Exclude<LabFormatKey, "pdf">[] =>
       ALL_LAB_FORMAT_KEYS.filter(
-        (key) => exportFormatsEnabled[key] && key !== "pdf",
+        (key): key is Exclude<LabFormatKey, "pdf"> =>
+          exportFormatsEnabled[key] && key !== "pdf",
       ),
     [exportFormatsEnabled],
   );
@@ -433,7 +450,7 @@ export function VdidLabGenerator() {
   React.useEffect(() => {
     if (
       previewFormatOptions.length > 0 &&
-      !previewFormatOptions.includes(previewFormat)
+      !previewFormatOptions.some((key) => key === previewFormat)
     ) {
       setPreviewFormat(previewFormatOptions[0]);
     } else if (
@@ -481,9 +498,10 @@ export function VdidLabGenerator() {
   }, []);
 
   React.useEffect(() => {
-    loadRecoloredLogo()
-      .then((img) => {
-        logoRef.current = img;
+    Promise.all([loadRecoloredLogo(), loadWhiteLogo()])
+      .then(([darkLogo, whiteLogo]) => {
+        logoRef.current = darkLogo;
+        logoWhiteRef.current = whiteLogo;
         setLogoLoaded(true);
         setLogoError(null);
         bumpPreview();
@@ -582,22 +600,27 @@ export function VdidLabGenerator() {
     });
   };
 
-  const moveSlideTo = (id: string, targetIndex: number) => {
+  const requestDeleteSlide = (id: string) => {
+    if (slides.length <= 1) return;
+    setSlideDeleteId(id);
+  };
+
+  const confirmDeleteSlide = () => {
+    if (!slideDeleteId) return;
+    deleteSlide(slideDeleteId);
+    setSlideDeleteId(null);
+  };
+
+  const reorderSlides = (dragId: string, insertIndex: number) => {
     setSlides((prev) => {
-      const idx = prev.findIndex((s) => s.id === id);
+      const idx = prev.findIndex((s) => s.id === dragId);
       if (idx < 0) return prev;
-      const clamped = Math.max(0, Math.min(prev.length - 1, targetIndex));
-      if (clamped === idx) return prev;
       const next = [...prev];
       const [item] = next.splice(idx, 1);
+      const clamped = Math.max(0, Math.min(next.length, insertIndex));
       next.splice(clamped, 0, item);
       return next;
     });
-  };
-
-  const reorderSlides = (dragId: string, targetId: string) => {
-    const targetIndex = slides.findIndex((s) => s.id === targetId);
-    if (targetIndex >= 0) moveSlideTo(dragId, targetIndex);
   };
 
   const handleImageUpload = (
@@ -702,6 +725,7 @@ export function VdidLabGenerator() {
     const offscreen = document.createElement("canvas");
     const assets: RenderAssets = {
       logo,
+      logoWhite: logoWhiteRef.current,
       slideImages: slideImagesRef.current,
       partnerLogos: partnerLogosRef.current,
     };
@@ -834,10 +858,16 @@ export function VdidLabGenerator() {
     const canvas = document.createElement("canvas");
     renderLabSlide(canvas, slide, previewFormat, {
       logo,
+      logoWhite: logoWhiteRef.current,
       slideImages: slideImagesRef.current,
       partnerLogos: partnerLogosRef.current,
     });
     setLightboxUrl(canvas.toDataURL("image/png"));
+  };
+
+  const selectSlideFromPreview = (slideId: string) => {
+    setSelectedId(slideId);
+    postFormRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   };
 
   const showFormatLabel =
@@ -845,8 +875,10 @@ export function VdidLabGenerator() {
     selectedSlide?.type === "eventPhoto" ||
     selectedSlide?.type === "coBranded" ||
     selectedSlide?.type === "freeform";
+  const showHeading = selectedSlide?.type !== "fullImage";
   const showImage =
     selectedSlide?.type === "eventPhoto" ||
+    selectedSlide?.type === "fullImage" ||
     selectedSlide?.type === "coBranded" ||
     selectedSlide?.type === "freeform";
   const showPartnerLogo = selectedSlide?.type === "coBranded";
@@ -859,6 +891,19 @@ export function VdidLabGenerator() {
     selectedSlide?.type === "eventPhoto" || selectedSlide?.type === "freeform";
   const showContact = selectedSlide?.type === "cta";
 
+  const slidePendingDelete = slides.find((s) => s.id === slideDeleteId);
+  const slidePendingDeleteIndex =
+    slideDeleteId != null
+      ? slides.findIndex((s) => s.id === slideDeleteId) + 1
+      : 0;
+  const slideDeleteDescription = slidePendingDelete
+    ? `Slide ${slidePendingDeleteIndex}${
+        slidePendingDelete.heading?.trim()
+          ? ` („${stripMarkdown(slidePendingDelete.heading).slice(0, 60)}“)`
+          : ""
+      } wird unwiderruflich entfernt.`
+    : "";
+
   return (
     <>
       <div className="space-y-6">
@@ -866,23 +911,20 @@ export function VdidLabGenerator() {
           <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <CardTitle>Vorschau</CardTitle>
             {previewFormatOptions.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {previewFormatOptions.map((key) => (
-                  <Button
-                    key={key}
-                    type="button"
-                    size="sm"
-                    variant={previewFormat === key ? "default" : "outline"}
-                    onClick={() => setPreviewFormat(key)}
-                  >
-                    {key === "instagramPost"
-                      ? "IG Post"
-                      : key === "instagramStory"
-                        ? "IG Story"
-                        : "LinkedIn"}
-                  </Button>
-                ))}
-              </div>
+              <Tabs
+                value={previewFormat}
+                onValueChange={(value) =>
+                  setPreviewFormat(value as LabFormatKey)
+                }
+              >
+                <TabsList>
+                  {previewFormatOptions.map((key) => (
+                    <TabsTrigger key={key} value={key}>
+                      {PREVIEW_FORMAT_TAB_LABELS[key]}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </Tabs>
             )}
           </CardHeader>
           <CardContent className="space-y-4">
@@ -892,13 +934,16 @@ export function VdidLabGenerator() {
                 selectedId={selectedSlide?.id ?? null}
                 previewFormat={FORMAT_CONFIG[previewFormat]}
                 logoRef={logoRef}
+                logoWhiteRef={logoWhiteRef}
                 slideImagesRef={slideImagesRef}
                 partnerLogosRef={partnerLogosRef}
                 logoLoaded={logoLoaded}
                 previewRevision={previewRevision}
                 maxHeight={480}
                 onAddSlide={() => addSlide()}
-                onSlideClick={openLightboxForSlide}
+                onSlideClick={selectSlideFromPreview}
+                onSlideZoom={openLightboxForSlide}
+                onDeleteSlide={requestDeleteSlide}
               />
             </div>
           </CardContent>
@@ -920,6 +965,7 @@ export function VdidLabGenerator() {
         </Card>
 
         {selectedSlide && (
+          <div ref={postFormRef}>
           <Card>
             <CardHeader className="flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
               <CardTitle>Post</CardTitle>
@@ -929,7 +975,7 @@ export function VdidLabGenerator() {
                 onSelect={setSelectedId}
                 onReorder={reorderSlides}
                 onDuplicate={duplicateSlide}
-                onDelete={deleteSlide}
+                onDelete={requestDeleteSlide}
               />
             </CardHeader>
             <CardContent className="grid gap-4 md:grid-cols-2">
@@ -970,6 +1016,7 @@ export function VdidLabGenerator() {
                       </select>
                     </div>
                   )}
+                  {showHeading && (
                   <div className="space-y-1 md:col-span-2">
                     <Label htmlFor="heading">Titel</Label>
                     <Input
@@ -982,6 +1029,7 @@ export function VdidLabGenerator() {
                     />
                     <p className="text-xs text-slate-500">{MARKDOWN_FORMAT_HINT}</p>
                   </div>
+                  )}
                   {(selectedSlide.type === "quote" ||
                     selectedSlide.type === "cta" ||
                     selectedSlide.type === "freeform") && (
@@ -1066,15 +1114,19 @@ export function VdidLabGenerator() {
                   {!showImage && !showPartnerLogo && (
                     <p className="text-xs text-slate-500 md:col-span-2">
                       Foto-Upload ist bei den Vorlagen{" "}
-                      <strong>Event mit Foto</strong>, <strong>Co-Branding</strong>{" "}
-                      und <strong>Freitext</strong> verfügbar.
+                      <strong>Event mit Foto</strong>, <strong>Foto Vollbild</strong>,{" "}
+                      <strong>Co-Branding</strong> und <strong>Freitext</strong> verfügbar.
                     </p>
                   )}
                   {showImage && (
                     <SlideImageUploadField
                       id="slidePhoto"
                       label="Foto"
-                      hint="Wird im Bildbereich der Slide angezeigt."
+                      hint={
+                        selectedSlide.type === "fullImage"
+                          ? "Wird als Vollflächen-Hintergrund genutzt; VDID-Logo unten links."
+                          : "Wird im Bildbereich der Slide angezeigt."
+                      }
                       imageUrl={selectedSlide.imageUrl}
                       onUpload={(file) => handleImageUpload(file, "imageUrl")}
                       onClear={() => clearSlideImage("imageUrl")}
@@ -1095,6 +1147,7 @@ export function VdidLabGenerator() {
                   )}
             </CardContent>
           </Card>
+          </div>
         )}
 
         <CaptionFieldsCard
@@ -1181,6 +1234,17 @@ export function VdidLabGenerator() {
         onClearImage={() => clearSlideImage("imageUrl")}
         idPrefix="lab-photo"
         uploadHint="PNG, JPG, WebP …"
+      />
+
+      <ConfirmDialog
+        open={slideDeleteId != null}
+        title="Slide löschen?"
+        description={slideDeleteDescription}
+        confirmLabel="Löschen"
+        cancelLabel="Abbrechen"
+        destructive
+        onConfirm={confirmDeleteSlide}
+        onCancel={() => setSlideDeleteId(null)}
       />
 
       {typeof document !== "undefined" &&

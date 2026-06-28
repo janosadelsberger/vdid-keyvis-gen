@@ -1,9 +1,9 @@
 "use client";
 
 import { DatePicker } from "@/components/ui/date-picker";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { formatDateLine, parseDateLine } from "@/lib/lab-date-line";
+import { TimePicker } from "@/components/ui/time-picker";
+import { formatDateLine, parseDateLine, timeForPicker } from "@/lib/lab-date-line";
 
 export type LabDateLineFieldsProps = {
   value: string;
@@ -35,11 +35,10 @@ export function LabDateLineFields({
       </div>
       <div className="space-y-1">
         <Label htmlFor={timeId}>Uhrzeit</Label>
-        <Input
+        <TimePicker
           id={timeId}
-          value={time}
-          onChange={(e) => update(date, e.target.value)}
-          placeholder="9:00–13:00"
+          value={timeForPicker(time)}
+          onChange={(nextTime) => update(date, nextTime)}
         />
       </div>
     </div>

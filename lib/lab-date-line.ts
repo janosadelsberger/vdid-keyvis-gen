@@ -34,6 +34,18 @@ export function formatDateLine(date: Date | null, time: string): string {
   return timePart;
 }
 
+/** Normalize stored time text for `<input type="time">` (HH:mm). */
+export function timeForPicker(time: string): string {
+  const t = time.trim();
+  if (!t) return "";
+  if (/^\d{2}:\d{2}$/.test(t)) return t;
+  const match = t.match(/^(\d{1,2}):(\d{2})/);
+  if (match) {
+    return `${match[1].padStart(2, "0")}:${match[2]}`;
+  }
+  return "";
+}
+
 function parseGermanDate(value: string): Date | null {
   const trimmed = value.trim();
   if (!trimmed) return null;

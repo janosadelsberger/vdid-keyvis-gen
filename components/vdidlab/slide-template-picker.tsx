@@ -6,6 +6,7 @@ import type { SlideType } from "@/lib/lab-slide-render";
 
 export const SLIDE_TYPES_ORDER: SlideType[] = [
   "eventPhoto",
+  "fullImage",
   "title",
   "quote",
   "cta",
@@ -18,6 +19,7 @@ export const SLIDE_TYPE_LABELS: Record<SlideType, string> = {
   quote: "Zitat / Testimonial",
   cta: "Call-to-Action",
   eventPhoto: "Event mit Foto",
+  fullImage: "Foto Vollbild",
   coBranded: "Co-Branding",
   freeform: "Freitext",
 };
@@ -25,6 +27,8 @@ export const SLIDE_TYPE_LABELS: Record<SlideType, string> = {
 export const SLIDE_TYPE_CAPTIONS: Record<SlideType, string> = {
   eventPhoto:
     "Formatzeile, Titel, Datum und großes Foto — für Events, Vorträge und Termine mit Bild.",
+  fullImage:
+    "Hochgeladenes Foto als Vollflächen-Hintergrund mit VDID-Logo unten links — Logofarbe passt sich automatisch an.",
   title:
     "Fortbildungs-Layout mit Formatzeile, großem Titel und Datum — ohne Bildfläche.",
   quote:
@@ -99,6 +103,12 @@ function wireframeRects(type: SlideType): Rect[] {
         { x: P, y: 38, w: W - 2 * P, h: 39, fill: WF.photo, r: 2 },
         ...logoMarks(),
         { x: W - P - 18, y: H - P - 4, w: 18, h: 2.5, fill: WF.text },
+      ];
+    case "fullImage":
+      return [
+        { x: 0, y: 0, w: W, h: H, fill: WF.photo, r: 0 },
+        { x: P, y: H - P - 11, w: 8, h: 8, fill: "#FFFFFF", r: 0.8 },
+        { x: P, y: H - P - 2, w: 13, h: 2, fill: "#FFFFFF", r: 0.8 },
       ];
     case "quote":
       return [
