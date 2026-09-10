@@ -71,9 +71,6 @@ export type WdcPlateMode = (typeof WDC_PLATE_MODES)[number];
 
 export const WDC_DEFAULT_PLATE_MODE: WdcPlateMode = "animated";
 
-/** Extra cover scale for the close-up still. */
-export const WDC_CLOSEUP_ZOOM = 2.15;
-
 export const WDC_PLATE_MODE_LABELS: Record<WdcPlateMode, string> = {
   animated: "Animiert",
   still: "Still der Animation",

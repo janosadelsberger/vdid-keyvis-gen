@@ -31,7 +31,6 @@ import { FONT, LAB_BG, LAB_BLUE, LAB_MUTED, LAB_TEXT } from "@/lib/lab-theme";
 import { drawPartnerLogoInBox } from "@/lib/partner-logo";
 import {
   WDC_BG_FILE,
-  WDC_CLOSEUP_ZOOM,
   WDC_MARGIN,
   isWdcFeedGridCanvas,
   parseWdcPlateMode,
@@ -149,10 +148,9 @@ function drawTemplatePlate(
 
   const edits = plateEdits ?? DEFAULT_IMAGE_EDIT_SETTINGS;
   const plateMode = parseWdcPlateMode(plateModeRaw);
-  const zoom = plateMode === "closeup" ? WDC_CLOSEUP_ZOOM : 1;
   const video = assets.backgroundVideo;
   const videoReady =
-    plateMode === "animated" &&
+    plateMode !== "closeup" &&
     video &&
     video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
     video.videoWidth > 0;
@@ -166,7 +164,6 @@ function drawTemplatePlate(
       dims.width,
       dims.height,
       edits,
-      zoom,
     );
   } else if (template.backgroundImageSrc) {
     const plate = assets.bundledImages?.get(template.backgroundImageSrc);
@@ -179,7 +176,6 @@ function drawTemplatePlate(
         dims.width,
         dims.height,
         edits,
-        zoom,
       );
     }
   }

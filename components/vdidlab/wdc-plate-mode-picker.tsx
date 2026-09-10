@@ -49,8 +49,9 @@ export function WdcPlateModePicker({
       </div>
       <p className="text-xs text-slate-500">
         Animiert braucht die Videoplatte und wird als GIF/MP4 mit exportiert,
-        wenn Animation angehakt ist. Still und Close-up nutzen das Standbild —
-        Close-up zoomt hinein (Fokus unter Hintergrund bearbeiten).
+        wenn Animation angehakt ist. Still ist dasselbe Bild ohne Bewegung —
+        gleicher Ausschnitt wie die Animation. Close-up ist das Standbild
+        unter public/wdc-bg.png.
       </p>
     </div>
   );

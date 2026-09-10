@@ -64,7 +64,7 @@ export type LabSlide = {
   /** Paint the partner PNG alpha as white (Lab Co-Branding). */
   partnerLogoWhiteOverlay?: boolean;
   imageEdits?: ImageEditSettings;
-  /** WDC plate: looping video, matching still, or zoomed close-up still. */
+  /** WDC plate: looping video, matching still, or the provided close-up PNG. */
   plateMode?: WdcPlateMode;
   /** Custom template slide */
   customTemplateId?: string;

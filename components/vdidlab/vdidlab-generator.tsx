@@ -759,6 +759,19 @@ export function VdidLabGenerator({
   }, [isWdc, bumpPreview]);
 
   React.useEffect(() => {
+    const video = backgroundVideoRef.current;
+    if (!isWdc || !video || !videoReady) return;
+    const animated =
+      parseWdcPlateMode(selectedSlide?.plateMode) === "animated";
+    if (animated) {
+      void video.play().catch(() => undefined);
+    } else {
+      video.pause();
+    }
+    bumpPreview();
+  }, [isWdc, videoReady, selectedSlide?.plateMode, bumpPreview]);
+
+  React.useEffect(() => {
     try {
       const stored = localStorage.getItem(LOGO_STYLE_STORAGE_KEY);
       if (stored === "color" || stored === "bw") {
@@ -1276,7 +1289,6 @@ export function VdidLabGenerator({
           for (const [i, slide] of slides.entries()) {
             renderLabSlide(offscreen, slide, formatKey, {
               ...assets,
-              backgroundVideo: null,
               hdrHeadline: false,
             });
             const slideSuffix = slides.length > 1 ? `_slide-${i + 1}` : "";
@@ -1310,7 +1322,6 @@ export function VdidLabGenerator({
         slides.forEach((slide, i) => {
           renderLabSlide(offscreen, slide, "pdf", {
             ...assets,
-            backgroundVideo: null,
             hdrHeadline: false,
           });
           const dataUrl = canvasToExportDataUrl(offscreen, "png");
