@@ -19,7 +19,7 @@ export function WdcPlateModePicker({
 }) {
   const mode = parseWdcPlateMode(value);
   return (
-    <div className="space-y-2 md:col-span-2">
+    <div className="space-y-3 md:col-span-2">
       <Label>Hintergrund</Label>
       <div
         role="radiogroup"
@@ -51,7 +51,7 @@ export function WdcPlateModePicker({
         Animiert braucht die Videoplatte und wird als GIF/MP4 mit exportiert,
         wenn Animation angehakt ist. Still ist dasselbe Bild ohne Bewegung —
         gleicher Ausschnitt wie die Animation. Close-up ist das Standbild
-        unter public/wdc-bg.png.
+        — die Streifen schließen an der WDC-Fahne ab.
       </p>
     </div>
   );

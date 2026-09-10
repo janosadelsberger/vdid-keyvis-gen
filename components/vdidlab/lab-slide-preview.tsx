@@ -83,7 +83,7 @@ export const LabSlidePreview = React.forwardRef<
     const canvas = canvasRef.current;
     const logo = logoRef.current;
     if (!canvas || !logo || !logoLoaded) return;
-    const ctx = get2dContext(canvas);
+    const ctx = get2dContext(canvas, { willReadFrequently: true });
     if (!ctx) return;
 
     canvas.width = width;

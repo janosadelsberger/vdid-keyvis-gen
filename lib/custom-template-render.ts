@@ -32,10 +32,16 @@ import { drawPartnerLogoInBox } from "@/lib/partner-logo";
 import {
   WDC_BG_FILE,
   WDC_MARGIN,
+  WDC_SIDEBAR_WIDTH,
   isWdcFeedGridCanvas,
   parseWdcPlateMode,
   wdcFeedGridLogoBox,
 } from "@/lib/wdc-theme";
+import {
+  detectVerticalStripeEdges,
+  stripeAlignFit,
+} from "@/lib/wdc-stripe-fit";
+import { overlayFilmGrain } from "@/lib/film-grain";
 
 type Ctx = CanvasRenderingContext2D;
 
@@ -154,30 +160,41 @@ function drawTemplatePlate(
     video &&
     video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
     video.videoWidth > 0;
+  const sidebarLeft =
+    template.overlayAssets?.find((asset) => asset.box.x > 0.5)?.box.x ??
+    1 - WDC_SIDEBAR_WIDTH;
 
-  if (videoReady) {
+  const drawAlignedPlate = (plate: RenderImage) => {
+    const { w: iw, h: ih } = sourceSize(plate);
+    const fit = stripeAlignFit(
+      iw,
+      ih,
+      dims.width,
+      dims.height,
+      detectVerticalStripeEdges(plate),
+      sidebarLeft,
+    );
     drawEditedImageCover(
       ctx,
-      video,
+      plate,
       0,
       0,
       dims.width,
       dims.height,
-      edits,
+      {
+        ...edits,
+        focalPoint: { x: fit.focalX, y: edits.focalPoint.y },
+      },
+      fit.extraZoom,
     );
+  };
+
+  if (videoReady) {
+    drawAlignedPlate(video);
+    overlayFilmGrain(ctx, dims.width, dims.height, video.currentTime);
   } else if (template.backgroundImageSrc) {
     const plate = assets.bundledImages?.get(template.backgroundImageSrc);
-    if (plate) {
-      drawEditedImageCover(
-        ctx,
-        plate,
-        0,
-        0,
-        dims.width,
-        dims.height,
-        edits,
-      );
-    }
+    if (plate) drawAlignedPlate(plate);
   }
 
   for (const overlay of template.overlayAssets ?? []) {

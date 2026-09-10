@@ -420,7 +420,7 @@ export function renderLabSlide(
   const cfg = FORMAT_CONFIG[formatKey];
   canvas.width = cfg.width;
   canvas.height = cfg.height;
-  const ctx = get2dContext(canvas);
+  const ctx = get2dContext(canvas, { willReadFrequently: true });
   if (!ctx) return;
   renderLabSlideToContext(
     ctx,
