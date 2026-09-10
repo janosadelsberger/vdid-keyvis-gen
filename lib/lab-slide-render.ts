@@ -1,3 +1,4 @@
+import { overlayHeadlineHdrMap } from "@/lib/hdr-headline";
 import {
   drawRichText,
   FIT_TEXT_GROW_RATIO,
@@ -16,6 +17,8 @@ import {
   type CustomTemplate,
 } from "@/lib/custom-template";
 import { renderCustomTemplateToContext } from "@/lib/custom-template-render";
+import type { WdcPlateMode } from "@/lib/wdc-theme";
+import { drawPartnerLogoInBox } from "@/lib/partner-logo";
 import { getLabLayout, LAB_TYPE } from "@/lib/lab-layout";
 import {
   FONT,
@@ -58,7 +61,11 @@ export type LabSlide = {
   contact?: string;
   imageUrl?: string | null;
   partnerLogoUrl?: string | null;
+  /** Paint the partner PNG alpha as white (Lab Co-Branding). */
+  partnerLogoWhiteOverlay?: boolean;
   imageEdits?: ImageEditSettings;
+  /** WDC plate: looping video, matching still, or zoomed close-up still. */
+  plateMode?: WdcPlateMode;
   /** Custom template slide */
   customTemplateId?: string;
   fields?: Record<string, string>;
@@ -85,6 +92,14 @@ export type RenderAssets = {
   slideImages: Map<string, RenderImage>;
   partnerLogos: Map<string, RenderImage>;
   customTemplates?: Map<string, CustomTemplate>;
+  /** Public chrome plates keyed by `publicFile` path (e.g. `/wdc-bg.png`). */
+  bundledImages?: Map<string, RenderImage>;
+  /** Optional looping video plate; when ready, replaces the still background. */
+  backgroundVideo?: HTMLVideoElement | null;
+  /** When set, headline text gets an HDR sheen map (glow on HDR displays). */
+  hdrHeadline?: boolean;
+  /** 0–1 strength of the HDR “whiter than white” map. */
+  hdrHeadlineAmount?: number;
 };
 
 export function primaryLogoForStyle(
@@ -311,6 +326,8 @@ type FittedRichTextStyle = {
   baseColor?: string;
   highlightColor?: string;
   growRatio?: number;
+  hdrMap?: boolean;
+  hdrAmount?: number;
 };
 
 function drawFittedRichText(
@@ -338,7 +355,7 @@ function drawFittedRichText(
   });
   const lineHeight = fontSize * lineHeightRatio;
 
-  drawRichText(ctx, text, {
+  const drawOpts = {
     x: layout.marginX,
     y,
     maxWidth: layout.contentWidth,
@@ -348,7 +365,11 @@ function drawFittedRichText(
     baseColor: style.baseColor ?? LAB_TEXT,
     highlightColor: style.highlightColor ?? LAB_BLUE,
     fontFamily: FONT,
-  });
+  };
+  drawRichText(ctx, text, drawOpts);
+  if (style.hdrMap && (style.hdrAmount ?? 0) > 0) {
+    overlayHeadlineHdrMap(ctx, text, drawOpts, style.hdrAmount);
+  }
 
   return {
     height: measureRichTextHeight(
@@ -381,6 +402,8 @@ function drawEventHeader(
     headingSize: number;
     dateSize: number;
     maxBottomY?: number;
+    hdrMap?: boolean;
+    hdrAmount?: number;
   },
 ): number {
   let y = layout.marginY + layout.topSafe;
@@ -410,6 +433,8 @@ function drawEventHeader(
         fontWeight: "700",
         lineHeightRatio: 1.08,
         growRatio: 1.75,
+        hdrMap: opts.hdrMap,
+        hdrAmount: opts.hdrAmount,
       },
     );
     y += fitted.height + fitted.fontSize * 0.28;
@@ -432,6 +457,8 @@ function drawTitleSlide(
   slide: LabSlide,
   layout: LayoutMetrics,
   logo: RenderImage,
+  hdrMap?: boolean,
+  hdrAmount?: number,
 ) {
   const maxBottomY =
     layout.height - layout.marginY - layout.logoHeight - layout.marginY * 0.15;
@@ -440,6 +467,8 @@ function drawTitleSlide(
     headingSize: LAB_TYPE.titleHeading * layout.scale,
     dateSize: LAB_TYPE.titleDate * layout.scale,
     maxBottomY,
+    hdrMap,
+    hdrAmount,
   });
   drawLogo(ctx, logo, layout);
 }
@@ -449,6 +478,8 @@ function drawQuoteSlide(
   slide: LabSlide,
   layout: LayoutMetrics,
   logo: RenderImage,
+  hdrMap?: boolean,
+  hdrAmount?: number,
 ) {
   const headingSize = LAB_TYPE.quoteHeading * layout.scale;
   const bodySize = LAB_TYPE.quoteBody * layout.scale;
@@ -474,6 +505,8 @@ function drawQuoteSlide(
         fontWeight: "700",
         lineHeightRatio: 1.1,
         growRatio: 1.7,
+        hdrMap,
+        hdrAmount,
       },
     );
     y += fitted.height + fitted.fontSize * 0.7;
@@ -497,6 +530,8 @@ function drawCtaSlide(
   slide: LabSlide,
   layout: LayoutMetrics,
   logo: RenderImage,
+  hdrMap?: boolean,
+  hdrAmount?: number,
 ) {
   const headingSize = LAB_TYPE.ctaHeading * layout.scale;
   const bodySize = LAB_TYPE.ctaBody * layout.scale;
@@ -533,6 +568,8 @@ function drawCtaSlide(
         baseColor: LAB_BLUE,
         highlightColor: LAB_BLUE,
         growRatio: 1.7,
+        hdrMap,
+        hdrAmount,
       },
     );
     y += fitted.height + fitted.fontSize * 0.7;
@@ -590,6 +627,8 @@ function drawEventPhotoSlide(
   layout: LayoutMetrics,
   logo: RenderImage,
   slideImage: RenderImage | null,
+  hdrMap?: boolean,
+  hdrAmount?: number,
 ) {
   const presenterSize = LAB_TYPE.presenter * layout.scale;
   const hasPresenter = !!slide.name?.trim();
@@ -606,6 +645,8 @@ function drawEventPhotoSlide(
     headingSize: LAB_TYPE.eventHeading * layout.scale,
     dateSize: LAB_TYPE.eventDate * layout.scale,
     maxBottomY,
+    hdrMap,
+    hdrAmount,
   });
   const imageTop = y + layout.scale * 8;
   const imageH = layout.height - imageTop - footerReserve;
@@ -649,6 +690,8 @@ function drawCoBrandedSlide(
   logo: RenderImage,
   slideImage: RenderImage | null,
   partnerLogo: RenderImage | null,
+  hdrMap?: boolean,
+  hdrAmount?: number,
 ) {
   const footerReserve = layout.logoHeight + layout.marginY + 20 * layout.scale;
   const imageMinHeight = 40;
@@ -660,6 +703,8 @@ function drawCoBrandedSlide(
     headingSize: LAB_TYPE.eventHeading * layout.scale,
     dateSize: LAB_TYPE.eventDate * layout.scale,
     maxBottomY,
+    hdrMap,
+    hdrAmount,
   });
 
   const imageTop = y + layout.scale * 8;
@@ -692,7 +737,12 @@ function drawCoBrandedSlide(
     const pw = maxH * aspect;
     const px = layout.width - layout.marginX - pw;
     const py = layout.height - layout.marginY - maxH;
-    ctx.drawImage(partnerLogo, px, py, pw, maxH);
+    drawPartnerLogoInBox(
+      ctx,
+      partnerLogo,
+      { x: px, y: py, w: pw, h: maxH },
+      { whiteOverlay: slide.partnerLogoWhiteOverlay },
+    );
   }
 }
 
@@ -702,6 +752,8 @@ function drawFreeformSlide(
   layout: LayoutMetrics,
   logo: RenderImage,
   slideImage: RenderImage | null,
+  hdrMap?: boolean,
+  hdrAmount?: number,
 ) {
   const labelSize = LAB_TYPE.formatLabel * layout.scale;
   const headingSize = LAB_TYPE.eventHeading * layout.scale;
@@ -736,6 +788,8 @@ function drawFreeformSlide(
         fontWeight: "700",
         lineHeightRatio: 1.08,
         growRatio: 1.7,
+        hdrMap,
+        hdrAmount,
       },
     );
     y += fitted.height + bodySize * 0.3;
@@ -856,24 +910,63 @@ export function renderLabSlideToContext(
         break;
       }
       const defaults = defaultContentForTemplate(template);
+      const images = { ...defaults.images };
+      for (const [slot, value] of Object.entries(slide.images ?? {})) {
+        images[slot] = {
+          ...defaults.images[slot],
+          ...value,
+          edits: value.edits ?? defaults.images[slot]?.edits,
+        };
+      }
       const content = {
         fields: { ...defaults.fields, ...slide.fields },
-        images: { ...defaults.images, ...slide.images },
+        images,
+        plateEdits: slide.imageEdits,
+        plateMode: slide.plateMode,
       };
       renderCustomTemplateToContext(ctx, template, content, dims, assets);
       break;
     }
     case "title":
-      drawTitleSlide(ctx, slide, layout, assets.logo);
+      drawTitleSlide(
+        ctx,
+        slide,
+        layout,
+        assets.logo,
+        assets.hdrHeadline,
+        assets.hdrHeadlineAmount,
+      );
       break;
     case "quote":
-      drawQuoteSlide(ctx, slide, layout, assets.logo);
+      drawQuoteSlide(
+        ctx,
+        slide,
+        layout,
+        assets.logo,
+        assets.hdrHeadline,
+        assets.hdrHeadlineAmount,
+      );
       break;
     case "cta":
-      drawCtaSlide(ctx, slide, layout, assets.logo);
+      drawCtaSlide(
+        ctx,
+        slide,
+        layout,
+        assets.logo,
+        assets.hdrHeadline,
+        assets.hdrHeadlineAmount,
+      );
       break;
     case "eventPhoto":
-      drawEventPhotoSlide(ctx, slide, layout, assets.logo, slideImage);
+      drawEventPhotoSlide(
+        ctx,
+        slide,
+        layout,
+        assets.logo,
+        slideImage,
+        assets.hdrHeadline,
+        assets.hdrHeadlineAmount,
+      );
       break;
     case "fullImage":
       drawFullImageSlide(
@@ -893,10 +986,20 @@ export function renderLabSlideToContext(
         assets.logo,
         slideImage,
         partnerLogo,
+        assets.hdrHeadline,
+        assets.hdrHeadlineAmount,
       );
       break;
     case "freeform":
-      drawFreeformSlide(ctx, slide, layout, assets.logo, slideImage);
+      drawFreeformSlide(
+        ctx,
+        slide,
+        layout,
+        assets.logo,
+        slideImage,
+        assets.hdrHeadline,
+        assets.hdrHeadlineAmount,
+      );
       break;
   }
 }

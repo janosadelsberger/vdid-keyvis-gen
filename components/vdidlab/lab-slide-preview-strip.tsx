@@ -21,6 +21,11 @@ export type LabSlidePreviewStripProps = {
   slideImagesRef: React.RefObject<Map<string, HTMLImageElement>>;
   partnerLogosRef: React.RefObject<Map<string, HTMLImageElement>>;
   customTemplatesRef?: React.RefObject<Map<string, CustomTemplate>>;
+  bundledImagesRef?: React.RefObject<Map<string, HTMLImageElement>>;
+  backgroundVideoRef?: React.RefObject<HTMLVideoElement | null>;
+  animateVideo?: boolean;
+  canvasClassName?: string;
+  frameClassName?: string;
   logoStyle?: LabLogoStyle;
   logoLoaded: boolean;
   previewRevision: number;
@@ -30,6 +35,8 @@ export type LabSlidePreviewStripProps = {
   onSlideClick?: (slideId: string) => void;
   onSlideZoom?: (slideId: string) => void;
   onDeleteSlide?: (slideId: string) => void;
+  hdrHeadline?: boolean;
+  hdrHeadlineAmount?: number;
 };
 
 export function LabSlidePreviewStrip({
@@ -41,6 +48,11 @@ export function LabSlidePreviewStrip({
   slideImagesRef,
   partnerLogosRef,
   customTemplatesRef,
+  bundledImagesRef,
+  backgroundVideoRef,
+  animateVideo = false,
+  canvasClassName,
+  frameClassName,
   logoStyle = "color",
   logoLoaded,
   previewRevision,
@@ -50,6 +62,8 @@ export function LabSlidePreviewStrip({
   onSlideClick,
   onSlideZoom,
   onDeleteSlide,
+  hdrHeadline = false,
+  hdrHeadlineAmount,
 }: LabSlidePreviewStripProps) {
   const canDelete = onDeleteSlide && slides.length > 1;
   const showActions = onSlideZoom || canDelete;
@@ -75,7 +89,10 @@ export function LabSlidePreviewStrip({
         {slides.map((slide) => (
           <div
             key={slide.id}
-            className="group relative shrink-0 overflow-hidden bg-[#F0F0F0]"
+            className={cn(
+              "group relative shrink-0 overflow-hidden bg-[#F0F0F0]",
+              frameClassName,
+            )}
           >
             <LabSlidePreview
               ref={
@@ -92,17 +109,22 @@ export function LabSlidePreviewStrip({
               slideImagesRef={slideImagesRef}
               partnerLogosRef={partnerLogosRef}
               customTemplatesRef={customTemplatesRef}
+              bundledImagesRef={bundledImagesRef}
+              backgroundVideoRef={backgroundVideoRef}
+              animateVideo={animateVideo && slide.id === selectedId}
               logoStyle={logoStyle}
               logoLoaded={logoLoaded}
               renderRevision={previewRevision}
               maxHeight={maxHeight}
               className="!block w-fit leading-none"
-              canvasClassName="block max-w-none"
+              canvasClassName={cn("block max-w-none", canvasClassName)}
               onClick={
                 onSlideClick ? () => onSlideClick(slide.id) : undefined
               }
               disabled={!logoLoaded}
               ariaLabel="Slide auswählen"
+              hdrHeadline={hdrHeadline}
+              hdrHeadlineAmount={hdrHeadlineAmount}
             />
             {showActions && (
               <div

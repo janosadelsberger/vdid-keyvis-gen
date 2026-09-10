@@ -23,6 +23,88 @@ export type DrawRichTextOptions = {
 export const MARKDOWN_FORMAT_HINT =
   "Markdown: **fett & blau**, __fett__, *kursiv*, [[nur blau]]";
 
+export const CANVAS_BREAK_HINT =
+  "Enter: Return · Shift+Enter: Soft Return (enger)";
+
+/** Shift+Enter: newline + zero-width space, so the field still shows a line break. */
+export const SOFT_RETURN = "\n\u200B";
+
+/** Auto-wrap and Enter: normal line height. */
+export const RICH_TEXT_WRAP_GAP = 1;
+/** Same as wrap — a normal Return (`\\n`). */
+export const RICH_TEXT_RETURN_GAP = 1;
+/** Shift+Enter: tighter than a normal return. */
+export const RICH_TEXT_SOFT_BREAK_GAP = 0.82;
+/** Two Returns (`\\n\\n`): one empty line. */
+export const RICH_TEXT_PARAGRAPH_GAP = 2;
+
+export type WrappedRichLine = {
+  runs: RichTextRun[];
+  /** Distance to the next line, as a multiple of lineHeight. */
+  gapAfter: number;
+};
+
+const leftInkInsetCache = new Map<string, number>();
+
+/** First visible character after Markdown, for optical left-edge alignment. */
+export function firstPlainChar(input: string): string {
+  const plain = stripMarkdown(input).replace(/^\s+/u, "");
+  if (!plain) return "";
+  return [...plain][0] ?? "";
+}
+
+/**
+ * Distance from fillText's x origin to the first ink pixel of `text`.
+ * Positive means the glyph starts to the right of the origin (side bearing).
+ */
+export function measureLeftInkInset(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  fontSize: number,
+  fontWeight = "400",
+  fontFamily = "Roboto, system-ui, sans-serif",
+): number {
+  const ch = firstPlainChar(text);
+  if (!ch || fontSize <= 0) return 0;
+
+  if (typeof document === "undefined") {
+    ctx.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
+    const left = ctx.measureText(ch).actualBoundingBoxLeft;
+    return Number.isFinite(left) ? -left : 0;
+  }
+
+  const key = `${fontFamily}\0${fontWeight}\0${fontSize.toFixed(2)}\0${ch}`;
+  const cached = leftInkInsetCache.get(key);
+  if (cached != null) return cached;
+
+  const origin = Math.ceil(fontSize);
+  const w = Math.max(8, origin * 3);
+  const h = Math.max(8, origin * 3);
+  const probe = document.createElement("canvas");
+  probe.width = w;
+  probe.height = h;
+  const probeCtx = probe.getContext("2d", { willReadFrequently: true });
+  if (!probeCtx) return 0;
+  probeCtx.clearRect(0, 0, w, h);
+  probeCtx.fillStyle = "#000";
+  probeCtx.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
+  probeCtx.textBaseline = "top";
+  probeCtx.textAlign = "left";
+  probeCtx.fillText(ch, origin, origin);
+  const { data } = probeCtx.getImageData(0, 0, w, h);
+  for (let x = 0; x < w; x++) {
+    for (let y = 0; y < h; y++) {
+      if (data[(y * w + x) * 4 + 3] > 8) {
+        const inset = x - origin;
+        leftInkInsetCache.set(key, inset);
+        return inset;
+      }
+    }
+  }
+  leftInkInsetCache.set(key, 0);
+  return 0;
+}
+
 /** Plain text for previews and filenames. */
 export function stripMarkdown(input: string): string {
   return input
@@ -171,8 +253,39 @@ function measureLineWidth(
   );
 }
 
+function gapForNewlines(count: number) {
+  if (count <= 1) return RICH_TEXT_RETURN_GAP;
+  return count === 2 ? RICH_TEXT_PARAGRAPH_GAP : count;
+}
+
+function trimTrailingSpaces(line: RichTextRun[]) {
+  while (line.length > 0) {
+    const last = line[line.length - 1];
+    const trimmed = last.text.replace(/\s+$/u, "");
+    if (trimmed.length === last.text.length) break;
+    if (!trimmed) line.pop();
+    else last.text = trimmed;
+  }
+}
+
+function appendRun(
+  line: RichTextRun[],
+  style: RunStyle,
+  text: string,
+) {
+  const last = line[line.length - 1];
+  if (last && runsShareStyle(last, style)) {
+    last.text += text;
+    return;
+  }
+  line.push({ text, ...style });
+}
+
 /**
  * Wrap rich text runs into lines that fit within maxWidth.
+ * Auto-wrap never starts a line with a space.
+ * `\\n` is a normal Return (same gap as wrap), `\\n`+ZWSP is a Soft Return,
+ * `\\n\\n` is a blank line.
  */
 export function wrapRichText(
   ctx: CanvasRenderingContext2D,
@@ -181,85 +294,110 @@ export function wrapRichText(
   fontSize: number,
   fontWeight = "400",
   fontFamily = "Roboto, system-ui, sans-serif",
-): RichTextLine[] {
-  const lines: RichTextLine[] = [];
+): WrappedRichLine[] {
+  const lines: WrappedRichLine[] = [];
   let currentLine: RichTextRun[] = [];
   let currentWidth = 0;
 
-  const pushLine = () => {
-    if (currentLine.length > 0) {
-      lines.push(currentLine);
-      currentLine = [];
-      currentWidth = 0;
+  const flush = (gapAfter: number, trimWrapSpace: boolean) => {
+    if (trimWrapSpace) trimTrailingSpaces(currentLine);
+    lines.push({ runs: currentLine, gapAfter });
+    currentLine = [];
+    currentWidth = 0;
+  };
+
+  const addWord = (style: RunStyle, word: string) => {
+    const isSpace = /^\s+$/u.test(word);
+    if ((isSpace || /^[\u200B]+$/u.test(word)) && currentLine.length === 0) {
+      return;
     }
+    if (word.startsWith("\u200B") && currentLine.length === 0) {
+      word = word.replace(/^[\u200B]+/u, "");
+      if (!word) return;
+    }
+
+    const testRun: RichTextRun = { text: word, ...style };
+    const wordWidth = measureRunWidth(
+      ctx,
+      testRun,
+      fontSize,
+      fontWeight,
+      fontFamily,
+    );
+
+    if (currentWidth + wordWidth > maxWidth && currentLine.length > 0) {
+      flush(RICH_TEXT_WRAP_GAP, true);
+      if (isSpace) return;
+    }
+
+    if (wordWidth > maxWidth && currentLine.length === 0 && !isSpace) {
+      let remaining = word;
+      while (remaining.length > 0) {
+        let chunk = remaining;
+        while (
+          chunk.length > 1 &&
+          measureRunWidth(
+            ctx,
+            { ...testRun, text: chunk },
+            fontSize,
+            fontWeight,
+            fontFamily,
+          ) > maxWidth
+        ) {
+          chunk = chunk.slice(0, -1);
+        }
+        remaining = remaining.slice(chunk.length);
+        if (remaining.length > 0) {
+          lines.push({
+            runs: [{ ...testRun, text: chunk }],
+            gapAfter: RICH_TEXT_WRAP_GAP,
+          });
+        } else {
+          appendRun(currentLine, style, chunk);
+          currentWidth = measureRunWidth(
+            ctx,
+            { ...testRun, text: chunk },
+            fontSize,
+            fontWeight,
+            fontFamily,
+          );
+        }
+      }
+      return;
+    }
+
+    appendRun(currentLine, style, word);
+    currentWidth += wordWidth;
   };
 
   for (const run of runs) {
-    const paragraphs = run.text.split("\n");
+    const style: RunStyle = {
+      bold: run.bold,
+      italic: run.italic,
+      highlight: run.highlight,
+    };
+    const parts = run.text.split(/(\n\u200B|\u2028|\n+)/);
 
-    for (let p = 0; p < paragraphs.length; p++) {
-      if (p > 0) {
-        pushLine();
+    for (const part of parts) {
+      if (!part) continue;
+      if (part === SOFT_RETURN || part === "\u2028") {
+        flush(RICH_TEXT_SOFT_BREAK_GAP, false);
+        continue;
       }
-
-      const words = paragraphs[p].split(/(\s+)/);
-
-      for (const word of words) {
+      if (part[0] === "\n") {
+        flush(gapForNewlines(part.length), false);
+        continue;
+      }
+      for (const word of part.split(/(\s+)/)) {
         if (!word) continue;
-
-        const testRun: RichTextRun = {
-          text: word,
-          bold: run.bold,
-          italic: run.italic,
-          highlight: run.highlight,
-        };
-        const wordWidth = measureRunWidth(
-          ctx,
-          testRun,
-          fontSize,
-          fontWeight,
-          fontFamily,
-        );
-
-        if (currentWidth + wordWidth > maxWidth && currentWidth > 0) {
-          pushLine();
-        }
-
-        if (wordWidth > maxWidth && currentLine.length === 0) {
-          let remaining = word;
-          while (remaining.length > 0) {
-            let chunk = remaining;
-            while (
-              chunk.length > 1 &&
-              measureRunWidth(
-                ctx,
-                { ...testRun, text: chunk },
-                fontSize,
-                fontWeight,
-                fontFamily,
-              ) > maxWidth
-            ) {
-              chunk = chunk.slice(0, -1);
-            }
-            lines.push([{ ...testRun, text: chunk }]);
-            remaining = remaining.slice(chunk.length);
-          }
-          currentWidth = 0;
-          continue;
-        }
-
-        const last = currentLine[currentLine.length - 1];
-        if (last && runsShareStyle(last, testRun)) {
-          last.text += word;
-        } else {
-          currentLine.push({ ...testRun });
-        }
-        currentWidth += wordWidth;
+        addWord(style, word);
       }
     }
   }
 
-  pushLine();
+  if (currentLine.length > 0 || lines.length === 0) {
+    flush(RICH_TEXT_WRAP_GAP, false);
+  }
   return lines;
 }
 
@@ -300,26 +438,28 @@ export function drawRichText(
   ctx.textAlign = "left";
 
   let cy = y;
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     const lineWidth = measureLineWidth(
       ctx,
-      line,
+      line.runs,
       fontSize,
       fontWeight,
       fontFamily,
     );
     let cx = textAlign === "right" ? x - lineWidth : x;
 
-    for (const run of line) {
+    for (const run of line.runs) {
       ctx.fillStyle = run.highlight ? highlightColor : baseColor;
       ctx.font = runFont(run, fontSize, fontWeight, fontFamily);
       ctx.fillText(run.text, cx, cy);
       cx += ctx.measureText(run.text).width;
     }
-    cy += lineHeight;
+    const gap = i < lines.length - 1 ? line.gapAfter : 1;
+    cy += lineHeight * gap;
   }
 
-  return lines.length * lineHeight;
+  return cy - y;
 }
 
 /**
@@ -345,7 +485,12 @@ export function measureRichTextHeight(
     fontWeight,
     fontFamily,
   );
-  return lines.length * lh;
+  let height = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const gap = i < lines.length - 1 ? lines[i].gapAfter : 1;
+    height += lh * gap;
+  }
+  return height;
 }
 
 export function countRichTextLines(
@@ -366,6 +511,21 @@ export function countRichTextLines(
     fontWeight,
     fontFamily,
   ).length;
+}
+
+export function applyCanvasEnterKey(
+  value: string,
+  selectionStart: number,
+  selectionEnd: number,
+  shiftKey: boolean,
+): { value: string; caret: number } {
+  const insert = shiftKey ? SOFT_RETURN : "\n";
+  const start = Math.max(0, selectionStart);
+  const end = Math.max(start, selectionEnd);
+  return {
+    value: value.slice(0, start) + insert + value.slice(end),
+    caret: start + insert.length,
+  };
 }
 
 export const FIT_TEXT_MIN_RATIO = 0.55;

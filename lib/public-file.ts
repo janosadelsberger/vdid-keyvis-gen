@@ -9,8 +9,9 @@
  */
 export function publicFile(path: string): string {
   const clean = path.replace(/^\//, "");
+  const encoded = clean.split("/").map(encodeURIComponent).join("/");
   const base = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
-  if (!base) return `/${clean}`;
+  if (!base) return `/${encoded}`;
   const normalizedBase = base.endsWith("/") ? base.slice(0, -1) : base;
-  return `${normalizedBase}/${clean}`;
+  return `${normalizedBase}/${encoded}`;
 }

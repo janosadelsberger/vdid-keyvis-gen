@@ -31,7 +31,6 @@ import {
 } from "@/lib/captions";
 import { formatLabDeckForLlmPrompt } from "@/lib/lab-caption-prompt";
 import { CaptionFieldsCard } from "@/components/caption-fields-card";
-import { DownloadIcon } from "@/components/download-icon";
 import { LabFormatPicker } from "@/components/vdidlab/lab-format-picker";
 import { cn } from "@/lib/utils";
 import { ImageDropZone } from "@/components/image-drop-zone";
@@ -39,6 +38,7 @@ import { ImageEditModal } from "@/components/image-edit-modal";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import {
   DEFAULT_IMAGE_EDIT_SETTINGS,
+  type ImageEditSettings,
 } from "@/lib/image-edit";
 import {
   renderLabSlideToContext,
@@ -49,9 +49,11 @@ import {
   primaryLogoForStyle,
 } from "@/lib/lab-slide-render";
 import {
+  CANVAS_BREAK_HINT,
   MARKDOWN_FORMAT_HINT,
   stripMarkdown,
 } from "@/lib/canvas-richtext";
+import { onCanvasTextareaKeyDown } from "@/components/vdidlab/custom-template-fields";
 import { LabDateLineFields } from "@/components/vdidlab/lab-date-line-fields";
 import { LabSlidePreviewStrip } from "@/components/vdidlab/lab-slide-preview-strip";
 import { PostSlideOrderBar } from "@/components/vdidlab/post-slide-order-bar";
@@ -59,6 +61,13 @@ import {
   SlideTemplatePicker,
 } from "@/components/vdidlab/slide-template-picker";
 import { CustomTemplateFields } from "@/components/vdidlab/custom-template-fields";
+import {
+  ExportProgressButton,
+  progressPercent,
+  useRafProgress,
+  type MotionProgressValue,
+  type ZipExportPhase,
+} from "@/components/vdidlab/motion-export-controls";
 import { TemplateEditorModal } from "@/components/vdidlab/template-editor/template-editor-modal";
 import {
   defaultContentForTemplate,
@@ -67,9 +76,28 @@ import {
   type CustomSlideImageSlot,
   type CustomTemplate,
 } from "@/lib/custom-template";
+import { publicFile } from "@/lib/public-file";
+import { loadBundledImages, probePublicVideo } from "@/lib/bundled-image";
+import { encodeSlideGif, encodeSlideVideo } from "@/lib/export-motion";
+import {
+  WDC_BG_FILE,
+  WDC_STORAGE_KEY,
+  WDC_VIDEO_CANDIDATES,
+  parseWdcPlateMode,
+  type WdcPlateMode,
+} from "@/lib/wdc-theme";
+import { WdcPlateModePicker } from "@/components/vdidlab/wdc-plate-mode-picker";
+import { get2dContext } from "@/lib/hdr-headline";
+import {
+  WDC_DEFAULT_TEMPLATE_ID,
+  WDC_TEMPLATE_CAPTIONS,
+  WDC_TEMPLATES,
+  collectWdcAssetSrcs,
+} from "@/lib/wdc-templates";
 
 export type { LabSlide, SlideType };
 export type { LabFormatKey } from "@/lib/lab-formats";
+export type LabGeneratorFamily = "lab" | "wdc";
 
 import {
   LAB_FORMAT_KEYS,
@@ -125,6 +153,35 @@ const PREVIEW_FORMAT_TAB_LABELS: Record<
   instagramStory: "IG Story",
   linkedin: "LinkedIn",
 };
+
+const FORMAT_SHORT_LABEL: Record<LabFormatKey, string> = {
+  instagramPost: "IG Post",
+  instagramStory: "IG Story",
+  linkedin: "LinkedIn",
+  pdf: "PDF",
+};
+
+function zipPhaseLabel(phase: ZipExportPhase, detail?: string) {
+  const suffix = detail ? ` · ${detail}` : "";
+  switch (phase) {
+    case "images":
+      return `Bilder${suffix}`;
+    case "pdf":
+      return "PDF";
+    case "gif":
+      return `GIF${suffix}`;
+    case "video":
+      return `MP4${suffix}`;
+    case "zip":
+      return "ZIP";
+  }
+}
+
+function yieldToUi() {
+  return new Promise<void>((resolve) => {
+    requestAnimationFrame(() => resolve());
+  });
+}
 
 const ALL_LAB_FORMAT_KEYS = LAB_FORMAT_KEYS;
 
@@ -209,6 +266,7 @@ function createCustomSlide(
     contact: "",
     imageUrl: null,
     partnerLogoUrl: null,
+    plateMode: "animated",
   };
 }
 
@@ -315,6 +373,7 @@ function parseStoredDeck(raw: string): StoredDeck | null {
         imageUrl: s.imageUrl ?? null,
         partnerLogoUrl: s.partnerLogoUrl ?? null,
         imageEdits: s.imageEdits,
+        plateMode: parseWdcPlateMode(s.plateMode),
         customTemplateId: s.customTemplateId,
         fields: s.fields,
         images: s.images,
@@ -361,7 +420,7 @@ export function renderLabSlide(
   const cfg = FORMAT_CONFIG[formatKey];
   canvas.width = cfg.width;
   canvas.height = cfg.height;
-  const ctx = canvas.getContext("2d");
+  const ctx = get2dContext(canvas);
   if (!ctx) return;
   renderLabSlideToContext(
     ctx,
@@ -448,6 +507,18 @@ function revokeBlobUrl(url: string | null | undefined) {
   }
 }
 
+function imageSlotDefaultEdits(
+  template: CustomTemplate | null | undefined,
+  slot: string,
+): ImageEditSettings {
+  const el = template?.elements.find(
+    (item) => item.kind === "image" && item.slot === slot,
+  );
+  return el?.kind === "image"
+    ? (el.defaultEdits ?? DEFAULT_IMAGE_EDIT_SETTINGS)
+    : DEFAULT_IMAGE_EDIT_SETTINGS;
+}
+
 function SlideImageUploadField({
   id,
   label,
@@ -488,14 +559,23 @@ function SlideImageUploadField({
   );
 }
 
-export function VdidLabGenerator() {
-  const [slides, setSlides] = React.useState<LabSlide[]>([
-    createSlide("eventPhoto"),
-  ]);
+export function VdidLabGenerator({
+  family = "lab",
+}: {
+  family?: LabGeneratorFamily;
+}) {
+  const isWdc = family === "wdc";
+  const deckStorageKey = isWdc ? WDC_STORAGE_KEY : DECK_STORAGE_KEY;
+  const [slides, setSlides] = React.useState<LabSlide[]>(() =>
+    isWdc
+      ? [createCustomSlide(WDC_DEFAULT_TEMPLATE_ID, WDC_TEMPLATES)]
+      : [createSlide("eventPhoto")],
+  );
   const [captions, setCaptions] = React.useState<CaptionSet>(EMPTY_CAPTIONS);
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
-  const [previewFormat, setPreviewFormat] =
-    React.useState<LabFormatKey>("instagramPost");
+  const [previewFormat, setPreviewFormat] = React.useState<LabFormatKey>(
+    isWdc ? "linkedin" : "instagramPost",
+  );
   const [deckHydrated, setDeckHydrated] = React.useState(false);
   const [logoLoaded, setLogoLoaded] = React.useState(false);
   const [logoError, setLogoError] = React.useState<string | null>(null);
@@ -505,7 +585,11 @@ export function VdidLabGenerator() {
   const logoWhiteRef = React.useRef<HTMLImageElement | null>(null);
   const slideImagesRef = React.useRef<Map<string, HTMLImageElement>>(new Map());
   const partnerLogosRef = React.useRef<Map<string, HTMLImageElement>>(new Map());
-  const customTemplatesRef = React.useRef<Map<string, CustomTemplate>>(new Map());
+  const customTemplatesRef = React.useRef<Map<string, CustomTemplate>>(
+    isWdc ? new Map(WDC_TEMPLATES.map((t) => [t.id, t])) : new Map(),
+  );
+  const bundledImagesRef = React.useRef<Map<string, HTMLImageElement>>(new Map());
+  const backgroundVideoRef = React.useRef<HTMLVideoElement | null>(null);
   const postFormRef = React.useRef<HTMLDivElement>(null);
   const slidesRef = React.useRef(slides);
   slidesRef.current = slides;
@@ -518,7 +602,12 @@ export function VdidLabGenerator() {
     React.useState<Record<ExportImageFormat, boolean>>(
       allExportImageFormatsEnabled,
     );
+  const [exportGifEnabled, setExportGifEnabled] = React.useState(false);
+  const [exportMp4Enabled, setExportMp4Enabled] = React.useState(false);
   const [photoEditModalOpen, setPhotoEditModalOpen] = React.useState(false);
+  const [photoEditSlot, setPhotoEditSlot] = React.useState<string | "plate" | null>(
+    null,
+  );
   const [slideDeleteId, setSlideDeleteId] = React.useState<string | null>(null);
   const [photoNaturalSize, setPhotoNaturalSize] = React.useState<{
     width: number;
@@ -527,9 +616,22 @@ export function VdidLabGenerator() {
   const [previewRevision, setPreviewRevision] = React.useState(0);
   const [formatLineOtherMode, setFormatLineOtherMode] = React.useState(false);
   const [logoStyle, setLogoStyle] = React.useState<LabLogoStyle>("color");
-  const [customTemplates, setCustomTemplates] = React.useState<CustomTemplate[]>([]);
+  const [customTemplates, setCustomTemplates] = React.useState<CustomTemplate[]>(
+    isWdc ? WDC_TEMPLATES : [],
+  );
   const [templateEditorOpen, setTemplateEditorOpen] = React.useState(false);
-  const [customTemplatesHydrated, setCustomTemplatesHydrated] = React.useState(false);
+  const [customTemplatesHydrated, setCustomTemplatesHydrated] = React.useState(isWdc);
+  const [videoReady, setVideoReady] = React.useState(false);
+  const [zipBusy, setZipBusy] = React.useState<ZipExportPhase | null>(null);
+  const [zipBusyDetail, setZipBusyDetail] = React.useState<string | undefined>();
+  const zipProgressRef = React.useRef<MotionProgressValue>({
+    done: 0,
+    total: 1,
+  });
+  const zipLockRef = React.useRef(false);
+  const zipProgress = useRafProgress(zipProgressRef, zipBusy != null);
+  const zipPercent = progressPercent(zipBusy ? zipProgress : null);
+  const zipStarted = (zipBusy ? zipProgress.done : 0) > 0;
 
   const bumpPreview = React.useCallback(() => {
     setPreviewRevision((revision) => revision + 1);
@@ -612,18 +714,49 @@ export function VdidLabGenerator() {
   }, [previewFormat, previewFormatOptions, exportFormatsEnabled.pdf]);
 
   React.useEffect(() => {
+    if (isWdc) {
+      customTemplatesRef.current = new Map(WDC_TEMPLATES.map((t) => [t.id, t]));
+      setCustomTemplates(WDC_TEMPLATES);
+      setCustomTemplatesHydrated(true);
+      return;
+    }
     const loaded = loadCustomTemplatesFromStorage();
     setCustomTemplates(loaded);
     customTemplatesRef.current = new Map(loaded.map((t) => [t.id, t]));
     setCustomTemplatesHydrated(true);
-  }, []);
+  }, [isWdc]);
 
   React.useEffect(() => {
-    if (!customTemplatesHydrated) return;
+    if (!customTemplatesHydrated || isWdc) return;
     customTemplatesRef.current = new Map(customTemplates.map((t) => [t.id, t]));
     saveCustomTemplatesToStorage(customTemplates);
     bumpPreview();
-  }, [customTemplates, customTemplatesHydrated, bumpPreview]);
+  }, [customTemplates, customTemplatesHydrated, bumpPreview, isWdc]);
+
+  React.useEffect(() => {
+    if (!isWdc) return;
+    void loadBundledImages(collectWdcAssetSrcs()).then((images) => {
+      bundledImagesRef.current = images;
+      bumpPreview();
+    });
+    void probePublicVideo(WDC_VIDEO_CANDIDATES).then((video) => {
+      backgroundVideoRef.current = video;
+      if (!video) {
+        setVideoReady(false);
+        return;
+      }
+      void video.play().then(
+        () => {
+          setVideoReady(true);
+          bumpPreview();
+        },
+        () => {
+          setVideoReady(true);
+          bumpPreview();
+        },
+      );
+    });
+  }, [isWdc, bumpPreview]);
 
   React.useEffect(() => {
     try {
@@ -663,17 +796,19 @@ export function VdidLabGenerator() {
     logoRef.current = logo as HTMLImageElement;
     return {
       logoStyle,
-      logo,
+      logo: isWdc && logoWhiteRef.current ? logoWhiteRef.current : logo,
       logoWhite: logoWhiteRef.current,
       slideImages: slideImagesRef.current,
       partnerLogos: partnerLogosRef.current,
       customTemplates: customTemplatesRef.current,
+      bundledImages: bundledImagesRef.current,
+      backgroundVideo: backgroundVideoRef.current,
     };
-  }, [logoStyle]);
+  }, [logoStyle, isWdc]);
 
   React.useEffect(() => {
     try {
-      const raw = localStorage.getItem(DECK_STORAGE_KEY);
+      const raw = localStorage.getItem(deckStorageKey);
       if (raw) {
         const parsed = parseStoredDeck(raw);
         if (parsed) {
@@ -686,16 +821,16 @@ export function VdidLabGenerator() {
       /* ignore */
     }
     setDeckHydrated(true);
-  }, []);
+  }, [deckStorageKey]);
 
   React.useEffect(() => {
     if (!deckHydrated) return;
     try {
-      localStorage.setItem(DECK_STORAGE_KEY, serializeDeck(slides, captions));
+      localStorage.setItem(deckStorageKey, serializeDeck(slides, captions));
     } catch {
       /* ignore */
     }
-  }, [slides, captions, deckHydrated]);
+  }, [slides, captions, deckHydrated, deckStorageKey]);
 
   React.useEffect(() => {
     return () => {
@@ -786,18 +921,26 @@ export function VdidLabGenerator() {
   };
 
   const addSlide = (type: SlideType = "eventPhoto") => {
-    const slide = createSlide(type);
+    const slide = isWdc
+      ? createCustomSlide(WDC_DEFAULT_TEMPLATE_ID, WDC_TEMPLATES)
+      : createSlide(type);
     setSlides((prev) => [...prev, slide]);
     setSelectedId(slide.id);
   };
 
   const changeCustomTemplate = (id: string, templateId: string) => {
+    const catalog = isWdc ? WDC_TEMPLATES : customTemplates;
     setSlides((prev) =>
       prev.map((s) => {
         if (s.id !== id) return s;
         revokeCustomSlideImages(s);
-        const next = createCustomSlide(templateId, customTemplates);
-        return { ...next, id: s.id };
+        const next = createCustomSlide(templateId, catalog);
+        return {
+          ...next,
+          id: s.id,
+          imageEdits: s.imageEdits,
+          plateMode: s.plateMode ?? next.plateMode,
+        };
       }),
     );
   };
@@ -824,15 +967,32 @@ export function VdidLabGenerator() {
 
     void loadImageFromUrl(url).then((img) => {
       mapRef.current.set(url, img);
+      const catalog = isWdc ? WDC_TEMPLATES : customTemplates;
+      const template = catalog.find(
+        (item) => item.id === selectedSlide.customTemplateId,
+      );
       const nextImages: Record<string, CustomSlideImageSlot> = {
         ...(selectedSlide.images ?? {}),
         [slot]: {
           url,
-          edits: kind === "image" ? DEFAULT_IMAGE_EDIT_SETTINGS : undefined,
+          edits:
+            kind === "image"
+              ? selectedSlide.images?.[slot]?.edits ??
+                imageSlotDefaultEdits(template, slot)
+              : undefined,
+          whiteOverlay: selectedSlide.images?.[slot]?.whiteOverlay,
         },
       };
       updateSlide(selectedSlide.id, { images: nextImages });
       revokeBlobUrl(prevUrl);
+      if (kind === "image") {
+        setPhotoNaturalSize({
+          width: img.naturalWidth || img.width,
+          height: img.naturalHeight || img.height,
+        });
+        setPhotoEditSlot(slot);
+        setPhotoEditModalOpen(true);
+      }
       bumpPreview();
     });
   };
@@ -845,9 +1005,17 @@ export function VdidLabGenerator() {
     const prevUrl = selectedSlide.images[slot]?.url;
     const mapRef = kind === "partnerLogo" ? partnerLogosRef : slideImagesRef;
     if (prevUrl) mapRef.current.delete(prevUrl);
-    const nextImages = { ...selectedSlide.images, [slot]: { url: null } };
+    const nextImages = {
+      ...selectedSlide.images,
+      [slot]: {
+        url: null,
+        edits: selectedSlide.images[slot]?.edits,
+        whiteOverlay: selectedSlide.images[slot]?.whiteOverlay,
+      },
+    };
     updateSlide(selectedSlide.id, { images: nextImages });
     revokeBlobUrl(prevUrl);
+    if (photoEditSlot === slot) closePhotoEdit();
     bumpPreview();
   };
 
@@ -933,6 +1101,7 @@ export function VdidLabGenerator() {
           width: img.naturalWidth || img.width,
           height: img.naturalHeight || img.height,
         });
+        setPhotoEditSlot(null);
         setPhotoEditModalOpen(true);
         bumpPreview();
       });
@@ -965,6 +1134,11 @@ export function VdidLabGenerator() {
     bumpPreview();
   };
 
+  const closePhotoEdit = () => {
+    setPhotoEditModalOpen(false);
+    setPhotoEditSlot(null);
+  };
+
   const openPhotoEdit = () => {
     if (!selectedSlide?.imageUrl) return;
     const img = slideImagesRef.current.get(selectedSlide.imageUrl);
@@ -974,10 +1148,50 @@ export function VdidLabGenerator() {
         height: img.naturalHeight || img.height,
       });
     }
+    setPhotoEditSlot(null);
     setPhotoEditModalOpen(true);
   };
 
+  const openCustomPhotoEdit = (slot: string) => {
+    if (!selectedSlide) return;
+    const url = selectedSlide.images?.[slot]?.url;
+    if (!url) return;
+    const img = slideImagesRef.current.get(url);
+    if (img) {
+      setPhotoNaturalSize({
+        width: img.naturalWidth || img.width,
+        height: img.naturalHeight || img.height,
+      });
+    }
+    setPhotoEditSlot(slot);
+    setPhotoEditModalOpen(true);
+  };
+
+  const openPlateEdit = () => {
+    const plate = bundledImagesRef.current.get(WDC_BG_FILE);
+    if (plate) {
+      setPhotoNaturalSize({
+        width: plate.naturalWidth || plate.width,
+        height: plate.naturalHeight || plate.height,
+      });
+    }
+    setPhotoEditSlot("plate");
+    setPhotoEditModalOpen(true);
+  };
+
+  const beginZipPhase = async (
+    phase: ZipExportPhase,
+    detail?: string,
+    total = 1,
+  ) => {
+    zipProgressRef.current = { done: 0, total };
+    setZipBusy(phase);
+    setZipBusyDetail(detail);
+    await yieldToUi();
+  };
+
   const handleDownloadAllAssets = async () => {
+    if (zipLockRef.current) return;
     const assets = buildRenderAssets();
     if (!assets) {
       setExportHint("Logo wird noch geladen …");
@@ -990,12 +1204,27 @@ export function VdidLabGenerator() {
 
     const rasterFormatKeys = enabledRasterFormats;
     const includePdf = exportFormatsEnabled.pdf;
+    const includeGif = isWdc && exportGifEnabled;
+    const includeMp4 = isWdc && exportMp4Enabled;
     if (rasterFormatKeys.length === 0 && !includePdf) {
       setExportHint("Mindestens ein Exportformat auswählen.");
       return;
     }
     if (rasterFormatKeys.length > 0 && enabledImageFormats.length === 0) {
       setExportHint("Mindestens PNG oder JPEG auswählen.");
+      return;
+    }
+
+    const video = backgroundVideoRef.current;
+    const motionSlides = slides.filter(
+      (slide) => parseWdcPlateMode(slide.plateMode) === "animated",
+    );
+    const needMotion =
+      isWdc && (includeGif || includeMp4) && motionSlides.length > 0;
+    if (needMotion && !video) {
+      setExportHint(
+        "Videoplatte fehlt. Lege public/wdc-bg.mp4 (oder .webm / .mov) ab.",
+      );
       return;
     }
 
@@ -1010,7 +1239,15 @@ export function VdidLabGenerator() {
       return;
     }
 
+    const motionFormatKeys: Exclude<LabFormatKey, "pdf">[] =
+      rasterFormatKeys.length > 0
+        ? rasterFormatKeys
+        : includeGif || includeMp4
+          ? ["linkedin"]
+          : [];
+
     setExportHint(null);
+    zipLockRef.current = true;
     const zip = new JSZip();
     const downloadDate = new Date();
     const offscreen = document.createElement("canvas");
@@ -1021,106 +1258,229 @@ export function VdidLabGenerator() {
       imageFormat: ExportImageFormat;
       filename: string;
     }[] = [];
+    const motionArchiveEntries: {
+      kind: "gif" | "mp4";
+      formatKey: LabFormatKey;
+      filename: string;
+    }[] = [];
 
-    for (const formatKey of rasterFormatKeys) {
-      const cfg = FORMAT_CONFIG[formatKey];
-      slides.forEach((slide, i) => {
-        renderLabSlide(offscreen, slide, formatKey, assets);
-        const slideSuffix = slides.length > 1 ? `_slide-${i + 1}` : "";
-        for (const imageFormat of enabledImageFormats) {
-          const dataUrl = canvasToExportDataUrl(offscreen, imageFormat);
-          const base64 = dataUrl.split(",")[1];
-          const name = `${exportAssetBasename(title, `${cfg.exportSlug}${slideSuffix}`, downloadDate)}.${EXPORT_IMAGE_EXT[imageFormat]}`;
-          imageArchiveEntries.push({
-            formatKey,
-            label: cfg.label,
-            imageFormat,
-            filename: name,
-          });
-          zip.file(name, base64, { base64: true });
+    try {
+      const imageJobs =
+        rasterFormatKeys.length * slides.length * enabledImageFormats.length;
+      if (imageJobs > 0) {
+        await beginZipPhase("images", undefined, imageJobs);
+        let imageDone = 0;
+        for (const formatKey of rasterFormatKeys) {
+          const cfg = FORMAT_CONFIG[formatKey];
+          setZipBusyDetail(FORMAT_SHORT_LABEL[formatKey]);
+          for (const [i, slide] of slides.entries()) {
+            renderLabSlide(offscreen, slide, formatKey, {
+              ...assets,
+              backgroundVideo: null,
+              hdrHeadline: false,
+            });
+            const slideSuffix = slides.length > 1 ? `_slide-${i + 1}` : "";
+            for (const imageFormat of enabledImageFormats) {
+              const dataUrl = canvasToExportDataUrl(offscreen, imageFormat);
+              const base64 = dataUrl.split(",")[1];
+              const name = `${exportAssetBasename(title, `${cfg.exportSlug}${slideSuffix}`, downloadDate)}.${EXPORT_IMAGE_EXT[imageFormat]}`;
+              imageArchiveEntries.push({
+                formatKey,
+                label: cfg.label,
+                imageFormat,
+                filename: name,
+              });
+              zip.file(name, base64, { base64: true });
+              imageDone += 1;
+              zipProgressRef.current = { done: imageDone, total: imageJobs };
+            }
+          }
+          await yieldToUi();
         }
-      });
-    }
+      }
 
-    let pdfFilename: string | null = null;
-    if (includePdf) {
-      const pdf = new jsPDF({ unit: "px", format: [1080, 1080], compress: true });
-      slides.forEach((slide, i) => {
-        renderLabSlide(offscreen, slide, "pdf", assets);
-        const dataUrl = canvasToExportDataUrl(offscreen, "png");
-        if (i > 0) pdf.addPage([1080, 1080], "p");
-        pdf.addImage(dataUrl, "PNG", 0, 0, 1080, 1080);
-      });
+      let pdfFilename: string | null = null;
+      if (includePdf) {
+        await beginZipPhase("pdf", undefined, slides.length);
+        const pdf = new jsPDF({
+          unit: "px",
+          format: [1080, 1080],
+          compress: true,
+        });
+        slides.forEach((slide, i) => {
+          renderLabSlide(offscreen, slide, "pdf", {
+            ...assets,
+            backgroundVideo: null,
+            hdrHeadline: false,
+          });
+          const dataUrl = canvasToExportDataUrl(offscreen, "png");
+          if (i > 0) pdf.addPage([1080, 1080], "p");
+          pdf.addImage(dataUrl, "PNG", 0, 0, 1080, 1080);
+          zipProgressRef.current = { done: i + 1, total: slides.length };
+        });
 
-      pdfFilename = `${exportAssetBasename(title, "VDID-Lab-Deck", downloadDate)}.pdf`;
-      zip.file(pdfFilename, pdf.output("blob"));
-    }
+        pdfFilename = `${exportAssetBasename(title, "VDID-Lab-Deck", downloadDate)}.pdf`;
+        zip.file(pdfFilename, pdf.output("blob"));
+      }
 
-    const captionTxtArchiveEntries = addCaptionsToZip(
-      zip,
-      title,
-      captions,
-      downloadDate,
-      LAB_CAPTION_PLATFORMS,
-    );
+      if (needMotion && video) {
+        const motionAssets = {
+          ...assets,
+          backgroundVideo: video,
+          hdrHeadline: false,
+        };
+        for (const formatKey of motionFormatKeys) {
+          const cfg = FORMAT_CONFIG[formatKey];
+          const short = FORMAT_SHORT_LABEL[formatKey];
+          for (const [i, slide] of slides.entries()) {
+            if (parseWdcPlateMode(slide.plateMode) !== "animated") continue;
+            const slideSuffix = slides.length > 1 ? `_slide-${i + 1}` : "";
+            const drawFrame = (ctx: CanvasRenderingContext2D) => {
+              renderLabSlideToContext(
+                ctx,
+                slide,
+                {
+                  width: cfg.width,
+                  height: cfg.height,
+                  topUiSafeInsetRatio: cfg.topUiSafeInsetRatio,
+                },
+                motionAssets,
+              );
+            };
+            const onProgress = (done: number, total: number) => {
+              zipProgressRef.current = { done, total };
+            };
+            if (includeGif) {
+              await beginZipPhase("gif", short);
+              const blob = await encodeSlideGif({
+                width: cfg.width,
+                height: cfg.height,
+                video,
+                drawFrame,
+                onProgress,
+              });
+              const name = `${exportAssetBasename(title, `${cfg.exportSlug}${slideSuffix}-motion`, downloadDate)}.gif`;
+              zip.file(name, blob);
+              motionArchiveEntries.push({
+                kind: "gif",
+                formatKey,
+                filename: name,
+              });
+            }
+            if (includeMp4) {
+              await beginZipPhase("video", short);
+              const blob = await encodeSlideVideo({
+                width: cfg.width,
+                height: cfg.height,
+                video,
+                drawFrame,
+                onProgress,
+              });
+              const name = `${exportAssetBasename(title, `${cfg.exportSlug}${slideSuffix}-motion`, downloadDate)}.mp4`;
+              zip.file(name, blob);
+              motionArchiveEntries.push({
+                kind: "mp4",
+                formatKey,
+                filename: name,
+              });
+            }
+          }
+        }
+      }
 
-    const zipBasename = exportAssetBasename(title, "all-formats", downloadDate);
-    const zipDownloadFilename = `${zipBasename}.zip`;
-    const jsonBasename = exportAssetBasename(title, "asset-export", downloadDate);
-    const jsonFilename = `${jsonBasename}.json`;
+      const captionTxtArchiveEntries = addCaptionsToZip(
+        zip,
+        title,
+        captions,
+        downloadDate,
+        LAB_CAPTION_PLATFORMS,
+      );
 
-    const exportManifest = {
-      export: {
-        generatedAt: downloadDate.toISOString(),
-        zipArchiveFilename: zipDownloadFilename,
-        manifestFilename: jsonFilename,
-      },
-      texts: {
-        deckTitle: title,
-        captions: {
-          instagram: captions.captionInstagram,
-          linkedin: captions.captionLinkedIn,
+      const zipBasename = exportAssetBasename(title, "all-formats", downloadDate);
+      const zipDownloadFilename = `${zipBasename}.zip`;
+      const jsonBasename = exportAssetBasename(title, "asset-export", downloadDate);
+      const jsonFilename = `${jsonBasename}.json`;
+
+      const exportManifest = {
+        export: {
+          generatedAt: downloadDate.toISOString(),
+          zipArchiveFilename: zipDownloadFilename,
+          manifestFilename: jsonFilename,
         },
-        slides: slides.map((s, i) => ({
-          index: i + 1,
-          type: s.type,
-          heading: s.heading,
-          dateLine: s.dateLine,
-        })),
-      },
-      filesInArchive: {
-        images: imageArchiveEntries.map((e) => ({
-          formatKey: e.formatKey,
-          label: e.label,
-          imageFormat: e.imageFormat,
-          filename: e.filename,
-        })),
-        captionTextFiles: captionTxtArchiveEntries.map((e) => ({
-          channel: e.channel,
-          filename: e.filename,
-        })),
-        pdfFilename,
-      },
-    };
+        texts: {
+          deckTitle: title,
+          captions: {
+            instagram: captions.captionInstagram,
+            linkedin: captions.captionLinkedIn,
+          },
+          slides: slides.map((s, i) => ({
+            index: i + 1,
+            type: s.type,
+            heading: s.heading,
+            dateLine: s.dateLine,
+          })),
+        },
+        filesInArchive: {
+          images: imageArchiveEntries.map((e) => ({
+            formatKey: e.formatKey,
+            label: e.label,
+            imageFormat: e.imageFormat,
+            filename: e.filename,
+          })),
+          motion: motionArchiveEntries.map((e) => ({
+            kind: e.kind,
+            formatKey: e.formatKey,
+            filename: e.filename,
+          })),
+          captionTextFiles: captionTxtArchiveEntries.map((e) => ({
+            channel: e.channel,
+            filename: e.filename,
+          })),
+          pdfFilename,
+        },
+      };
 
-    zip.file(jsonFilename, JSON.stringify(exportManifest, null, 2));
+      zip.file(jsonFilename, JSON.stringify(exportManifest, null, 2));
 
-    const blob = await zip.generateAsync({ type: "blob" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = zipDownloadFilename;
-    link.click();
-    URL.revokeObjectURL(url);
+      await beginZipPhase("zip", undefined, 100);
+      const blob = await zip.generateAsync({ type: "blob" }, (meta) => {
+        zipProgressRef.current = {
+          done: Math.round(meta.percent),
+          total: 100,
+        };
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = zipDownloadFilename;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setExportHint(
+        err instanceof Error ? err.message : "ZIP-Export fehlgeschlagen.",
+      );
+    } finally {
+      zipProgressRef.current = { done: 1, total: 1 };
+      zipLockRef.current = false;
+      setZipBusy(null);
+      setZipBusyDetail(undefined);
+    }
   };
 
   const handleZipButtonClick = () => {
+    if (zipLockRef.current) return;
     if (enabledExportFormats.length === 0) {
       setExportHint("Mindestens ein Exportformat auswählen.");
       return;
     }
     if (enabledRasterFormats.length > 0 && enabledImageFormats.length === 0) {
       setExportHint("Mindestens PNG oder JPEG auswählen.");
+      return;
+    }
+    if (isWdc && (exportGifEnabled || exportMp4Enabled) && !videoReady) {
+      setExportHint(
+        "Videoplatte fehlt. Lege public/wdc-bg.mp4 (oder .webm / .mov) ab.",
+      );
       return;
     }
     void handleDownloadAllAssets();
@@ -1160,9 +1520,10 @@ export function VdidLabGenerator() {
   };
 
   const isCustomSlide = selectedSlide?.type === "custom";
+  const templateCatalog = isWdc ? WDC_TEMPLATES : customTemplates;
   const selectedCustomTemplate =
     isCustomSlide && selectedSlide?.customTemplateId
-      ? customTemplates.find((t) => t.id === selectedSlide.customTemplateId)
+      ? templateCatalog.find((t) => t.id === selectedSlide.customTemplateId)
       : null;
 
   const showFormatLabel =
@@ -1212,6 +1573,24 @@ export function VdidLabGenerator() {
       } wird unwiderruflich entfernt.`
     : "";
 
+  const editingPlate = photoEditSlot === "plate";
+  const editingCustomSlot =
+    photoEditSlot && photoEditSlot !== "plate" ? photoEditSlot : null;
+  const editingImageUrl = editingPlate
+    ? publicFile(WDC_BG_FILE)
+    : editingCustomSlot
+      ? selectedSlide?.images?.[editingCustomSlot]?.url ?? null
+      : selectedSlide?.imageUrl ?? null;
+  const editingDefaultSettings = editingCustomSlot
+    ? imageSlotDefaultEdits(selectedCustomTemplate, editingCustomSlot)
+    : DEFAULT_IMAGE_EDIT_SETTINGS;
+  const editingSettings = editingPlate
+    ? selectedSlide?.imageEdits ?? DEFAULT_IMAGE_EDIT_SETTINGS
+    : editingCustomSlot
+      ? selectedSlide?.images?.[editingCustomSlot]?.edits ??
+        editingDefaultSettings
+      : selectedSlide?.imageEdits ?? DEFAULT_IMAGE_EDIT_SETTINGS;
+
   return (
     <>
       <div className="space-y-6">
@@ -1219,6 +1598,7 @@ export function VdidLabGenerator() {
           <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <CardTitle>Vorschau</CardTitle>
             <div className="flex flex-wrap items-center gap-2">
+              {!isWdc && (
               <Button
                 type="button"
                 variant="outline"
@@ -1227,6 +1607,17 @@ export function VdidLabGenerator() {
               >
                 Vorlagen bearbeiten
               </Button>
+              )}
+              {isWdc && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={openPlateEdit}
+              >
+                Hintergrund bearbeiten…
+              </Button>
+              )}
             {previewFormatOptions.length > 0 && (
               <Tabs
                 value={previewFormat}
@@ -1256,6 +1647,15 @@ export function VdidLabGenerator() {
                 slideImagesRef={slideImagesRef}
                 partnerLogosRef={partnerLogosRef}
                 customTemplatesRef={customTemplatesRef}
+                bundledImagesRef={bundledImagesRef}
+                backgroundVideoRef={backgroundVideoRef}
+                animateVideo={
+                  isWdc &&
+                  videoReady &&
+                  parseWdcPlateMode(selectedSlide?.plateMode) === "animated"
+                }
+                canvasClassName={isWdc ? "bg-[#0A2CD9]" : undefined}
+                frameClassName={isWdc ? "bg-[#0A2CD9]" : undefined}
                 logoStyle={logoStyle}
                 logoLoaded={logoLoaded}
                 previewRevision={previewRevision}
@@ -1266,6 +1666,7 @@ export function VdidLabGenerator() {
                 onDeleteSlide={requestDeleteSlide}
               />
             </div>
+            {!isWdc && (
             <div className="space-y-1">
               <Label htmlFor="logoStyle">Logo</Label>
               <select
@@ -1284,6 +1685,7 @@ export function VdidLabGenerator() {
                 Kontrast zum Hintergrund gewählt.
               </p>
             </div>
+            )}
           </CardContent>
         </Card>
 
@@ -1322,8 +1724,11 @@ export function VdidLabGenerator() {
                 <SlideTemplatePicker
                   value={selectedSlide.type}
                   customTemplateId={selectedSlide.customTemplateId}
-                  customTemplates={customTemplates}
+                  customTemplates={templateCatalog}
                   renderAssets={editorRenderAssets}
+                  hideBuiltins={isWdc}
+                  customCaptions={isWdc ? WDC_TEMPLATE_CAPTIONS : undefined}
+                  thumbnailAspectClass={isWdc ? "aspect-square" : "aspect-[4/5]"}
                   onChange={(type) =>
                     changeSlideType(selectedSlide.id, type)
                   }
@@ -1332,6 +1737,14 @@ export function VdidLabGenerator() {
                   }
                 />
               </div>
+              {isWdc && (
+                <WdcPlateModePicker
+                  value={selectedSlide.plateMode}
+                  onChange={(plateMode: WdcPlateMode) =>
+                    updateSlide(selectedSlide.id, { plateMode })
+                  }
+                />
+              )}
               {isCustomSlide && selectedCustomTemplate && (
                 <CustomTemplateFields
                   slide={selectedSlide}
@@ -1341,6 +1754,22 @@ export function VdidLabGenerator() {
                   }
                   onImageUpload={handleCustomImageUpload}
                   onImageClear={clearCustomImage}
+                  onImageEdit={openCustomPhotoEdit}
+                  onPartnerWhiteOverlay={(slot, enabled) => {
+                    if (!selectedSlide) return;
+                    const prev = selectedSlide.images?.[slot];
+                    updateSlide(selectedSlide.id, {
+                      images: {
+                        ...(selectedSlide.images ?? {}),
+                        [slot]: {
+                          url: prev?.url ?? null,
+                          edits: prev?.edits,
+                          whiteOverlay: enabled,
+                        },
+                      },
+                    });
+                    bumpPreview();
+                  }}
                 />
               )}
                   {showFormatLabel && (
@@ -1428,11 +1857,19 @@ export function VdidLabGenerator() {
                         onChange={(e) =>
                           updateSlide(selectedSlide.id, { body: e.target.value })
                         }
+                        onKeyDown={(e) =>
+                          onCanvasTextareaKeyDown(
+                            e,
+                            selectedSlide.body ?? "",
+                            (body) => updateSlide(selectedSlide.id, { body }),
+                          )
+                        }
                         placeholder="Text mit Markdown — z. B. *kursiv* oder **hervorgehoben**"
                         rows={4}
                         className="resize-y"
                       />
                       <p className="text-xs text-slate-500">{MARKDOWN_FORMAT_HINT}</p>
+                      <p className="text-xs text-slate-500">{CANVAS_BREAK_HINT}</p>
                     </div>
                   )}
                   {showDateLine && (
@@ -1498,7 +1935,7 @@ export function VdidLabGenerator() {
                       <p className="text-xs text-slate-500">{MARKDOWN_FORMAT_HINT}</p>
                     </div>
                   )}
-                  {!showImage && !showPartnerLogo && (
+                  {!isCustomSlide && !showImage && !showPartnerLogo && (
                     <p className="text-xs text-slate-500 md:col-span-2">
                       Foto-Upload ist bei den Vorlagen{" "}
                       <strong>Event mit Foto</strong>, <strong>Foto Vollbild</strong>,{" "}
@@ -1521,16 +1958,43 @@ export function VdidLabGenerator() {
                     />
                   )}
                   {showPartnerLogo && (
-                    <SlideImageUploadField
-                      id="partnerLogo"
-                      label="Partner-Logo"
-                      hint="Erscheint unten rechts neben dem VDID-Logo."
-                      imageUrl={selectedSlide.partnerLogoUrl}
-                      onUpload={(file) =>
-                        handleImageUpload(file, "partnerLogoUrl")
-                      }
-                      onClear={() => clearSlideImage("partnerLogoUrl")}
-                    />
+                    <div className="space-y-2 md:col-span-2">
+                      <SlideImageUploadField
+                        id="partnerLogo"
+                        label="Partner-Logo"
+                        hint="Erscheint unten rechts neben dem VDID-Logo."
+                        imageUrl={selectedSlide.partnerLogoUrl}
+                        onUpload={(file) =>
+                          handleImageUpload(file, "partnerLogoUrl")
+                        }
+                        onClear={() => clearSlideImage("partnerLogoUrl")}
+                      />
+                      {selectedSlide.partnerLogoUrl && (
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <Checkbox
+                              id="partner-logo-white"
+                              checked={!!selectedSlide.partnerLogoWhiteOverlay}
+                              onChange={(e) =>
+                                updateSlide(selectedSlide.id, {
+                                  partnerLogoWhiteOverlay: e.target.checked,
+                                })
+                              }
+                            />
+                            <Label
+                              htmlFor="partner-logo-white"
+                              className="cursor-pointer"
+                            >
+                              Mit Weiß überlagern
+                            </Label>
+                          </div>
+                          <p className="text-xs text-slate-500">
+                            Nimmt den Alpha-Kanal der PNG und färbt das Logo
+                            weiß — lesbar auf dunklem Grund.
+                          </p>
+                        </div>
+                      )}
+                    </div>
                   )}
             </CardContent>
           </Card>
@@ -1550,73 +2014,143 @@ export function VdidLabGenerator() {
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-sm text-slate-600">
-              Bilder, Captions (.txt), PDF und Manifest als ZIP.
+              {isWdc
+                ? "Alles oben Gewählte als ZIP — Formate, Captions und angehakte Animationen."
+                : "Bilder, Captions (.txt), PDF und Manifest als ZIP."}
             </p>
-            {enabledRasterFormats.length > 0 && (
-              <div className="space-y-2">
-                <p className="text-xs font-medium text-slate-500">
-                  Bilddateiformat
-                </p>
-                <div className="flex flex-wrap gap-4">
-                  {EXPORT_IMAGE_FORMATS.map((imageFormat) => (
-                    <label
-                      key={imageFormat}
-                      htmlFor={`lab-image-format-${imageFormat}`}
-                      className="flex cursor-pointer items-center gap-2 text-sm text-slate-700"
-                    >
-                      <Checkbox
-                        id={`lab-image-format-${imageFormat}`}
-                        checked={exportImageFormatsEnabled[imageFormat]}
-                        onChange={(e) =>
-                          toggleExportImageFormat(
-                            imageFormat,
-                            e.target.checked,
-                          )
-                        }
-                      />
-                      {EXPORT_IMAGE_FORMAT_LABELS[imageFormat]}
-                    </label>
-                  ))}
-                </div>
+            {(enabledRasterFormats.length > 0 || isWdc) && (
+              <div className="flex flex-wrap items-start gap-x-10 gap-y-4">
+                {enabledRasterFormats.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-slate-500">
+                      Bilddateiformat
+                    </p>
+                    <div className="flex flex-wrap gap-4">
+                      {EXPORT_IMAGE_FORMATS.map((imageFormat) => (
+                        <label
+                          key={imageFormat}
+                          htmlFor={`lab-image-format-${imageFormat}`}
+                          className="flex cursor-pointer items-center gap-2 text-sm text-slate-700"
+                        >
+                          <Checkbox
+                            id={`lab-image-format-${imageFormat}`}
+                            checked={exportImageFormatsEnabled[imageFormat]}
+                            onChange={(e) =>
+                              toggleExportImageFormat(
+                                imageFormat,
+                                e.target.checked,
+                              )
+                            }
+                          />
+                          {EXPORT_IMAGE_FORMAT_LABELS[imageFormat]}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {isWdc && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-slate-500">
+                      Animation
+                    </p>
+                    <div className="flex flex-wrap gap-4">
+                      <label
+                        htmlFor="export-addition-gif"
+                        className="flex cursor-pointer items-center gap-2 text-sm text-slate-700"
+                      >
+                        <Checkbox
+                          id="export-addition-gif"
+                          checked={exportGifEnabled}
+                          disabled={!videoReady}
+                          onChange={(e) => setExportGifEnabled(e.target.checked)}
+                        />
+                        GIF
+                      </label>
+                      <label
+                        htmlFor="export-addition-mp4"
+                        className="flex cursor-pointer items-center gap-2 text-sm text-slate-700"
+                      >
+                        <Checkbox
+                          id="export-addition-mp4"
+                          checked={exportMp4Enabled}
+                          disabled={!videoReady}
+                          onChange={(e) => setExportMp4Enabled(e.target.checked)}
+                        />
+                        MP4
+                      </label>
+                    </div>
+                    {!videoReady && (
+                      <p className="text-xs text-slate-500">
+                        GIF und MP4 brauchen eine Platte unter{" "}
+                        <code>public/wdc-bg.mp4</code>, <code>.webm</code> oder{" "}
+                        <code>.mov</code>.
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
             )}
             <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
+              <ExportProgressButton
+                busy={zipBusy != null}
+                busyLabel={
+                  zipBusy
+                    ? zipPhaseLabel(zipBusy, zipBusyDetail)
+                    : "ZIP"
+                }
+                idleLabel="ZIP"
+                idleExtra={
+                  <>
+                    {enabledExportFormats.length <
+                      ALL_LAB_FORMAT_KEYS.length && (
+                      <span className="font-normal opacity-80">
+                        ({enabledExportFormats.length} Formate)
+                      </span>
+                    )}
+                    {isWdc && exportGifEnabled && (
+                      <span className="font-normal opacity-80">GIF</span>
+                    )}
+                    {isWdc && exportMp4Enabled && (
+                      <span className="font-normal opacity-80">MP4</span>
+                    )}
+                  </>
+                }
+                percent={zipPercent}
+                started={zipStarted}
                 disabled={
                   !logoLoaded ||
                   enabledExportFormats.length === 0 ||
                   (enabledRasterFormats.length > 0 &&
-                    enabledImageFormats.length === 0)
+                    enabledImageFormats.length === 0) ||
+                  (isWdc &&
+                    (exportGifEnabled || exportMp4Enabled) &&
+                    !videoReady)
                 }
                 onClick={handleZipButtonClick}
-                aria-label="ZIP herunterladen"
-                className="gap-1.5"
-              >
-                <DownloadIcon />
-                ZIP
-                {enabledExportFormats.length < ALL_LAB_FORMAT_KEYS.length && (
-                  <span className="font-normal opacity-80">
-                    ({enabledExportFormats.length} Formate)
-                  </span>
-                )}
-              </Button>
+              />
               <Button
                 type="button"
                 variant="outline"
+                disabled={zipBusy != null}
                 onClick={() => {
                   for (const slide of slidesRef.current) {
                     revokeBlobUrl(slide.imageUrl);
                     revokeBlobUrl(slide.partnerLogoUrl);
                     revokeCustomSlideImages(slide);
                   }
-                  setSlides([createSlide("eventPhoto")]);
+                  setSlides(
+                    isWdc
+                      ? [createCustomSlide(WDC_DEFAULT_TEMPLATE_ID, WDC_TEMPLATES)]
+                      : [createSlide("eventPhoto")],
+                  );
                   setCaptions(EMPTY_CAPTIONS);
                   setSelectedId(null);
                   setExportFormatsEnabled(allLabFormatsEnabled());
                   setExportImageFormatsEnabled(allExportImageFormatsEnabled());
+                  setExportGifEnabled(false);
+                  setExportMp4Enabled(false);
                   try {
-                    localStorage.removeItem(DECK_STORAGE_KEY);
+                    localStorage.removeItem(deckStorageKey);
                   } catch {
                     /* ignore */
                   }
@@ -1644,7 +2178,7 @@ export function VdidLabGenerator() {
       </div>
 
       <TemplateEditorModal
-        open={templateEditorOpen}
+        open={!isWdc && templateEditorOpen}
         onClose={() => setTemplateEditorOpen(false)}
         templates={customTemplates}
         onTemplatesChange={setCustomTemplates}
@@ -1661,20 +2195,56 @@ export function VdidLabGenerator() {
       />
 
       <ImageEditModal
-        open={photoEditModalOpen && !!selectedSlide?.imageUrl}
-        onClose={() => setPhotoEditModalOpen(false)}
-        title="Foto bearbeiten"
-        imageUrl={selectedSlide?.imageUrl ?? null}
+        open={photoEditModalOpen && !!editingImageUrl}
+        onClose={closePhotoEdit}
+        title={editingPlate ? "Hintergrund bearbeiten" : "Foto bearbeiten"}
+        imageUrl={editingImageUrl}
         naturalSize={photoNaturalSize}
-        settings={selectedSlide?.imageEdits ?? DEFAULT_IMAGE_EDIT_SETTINGS}
+        settings={editingSettings}
+        defaultSettings={editingDefaultSettings}
         onSettingsChange={(imageEdits) => {
-          if (selectedSlide) {
-            updateSlide(selectedSlide.id, { imageEdits });
+          if (!selectedSlide) return;
+          if (editingCustomSlot) {
+            updateSlide(selectedSlide.id, {
+              images: {
+                ...(selectedSlide.images ?? {}),
+                [editingCustomSlot]: {
+                  ...(selectedSlide.images?.[editingCustomSlot] ?? {
+                    url: null,
+                  }),
+                  edits: imageEdits,
+                },
+              },
+            });
+            return;
           }
+          updateSlide(selectedSlide.id, { imageEdits });
         }}
-        onFileSelected={(file) => handleImageUpload(file, "imageUrl")}
-        onClearImage={() => clearSlideImage("imageUrl")}
-        idPrefix="lab-photo"
+        onFileSelected={
+          editingPlate
+            ? undefined
+            : editingCustomSlot
+              ? (file) =>
+                  handleCustomImageUpload(editingCustomSlot, "image", file)
+              : (file) => handleImageUpload(file, "imageUrl")
+        }
+        onClearImage={
+          editingPlate
+            ? undefined
+            : editingCustomSlot
+              ? () => {
+                  clearCustomImage(editingCustomSlot, "image");
+                  closePhotoEdit();
+                }
+              : () => clearSlideImage("imageUrl")
+        }
+        idPrefix={
+          editingPlate
+            ? "wdc-plate"
+            : editingCustomSlot
+              ? `custom-photo-${editingCustomSlot}`
+              : "lab-photo"
+        }
         uploadHint="PNG, JPG, WebP …"
       />
 

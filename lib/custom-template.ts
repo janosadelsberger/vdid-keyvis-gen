@@ -1,4 +1,5 @@
 import type { ImageEditSettings } from "@/lib/image-edit";
+import type { WdcPlateMode } from "@/lib/wdc-theme";
 import {
   labLogoNormalizedBox,
   squareLogoElements,
@@ -38,6 +39,16 @@ export type ImageTemplateElement = {
   slot: string;
   label: string;
   box: NormalizedBox;
+  defaultEdits?: ImageEditSettings;
+};
+
+export type OverlayFit = "cover" | "contain" | "stretch";
+
+export type TemplateOverlayAsset = {
+  src: string;
+  box: NormalizedBox;
+  fit?: OverlayFit;
+  backgroundFill?: string;
 };
 
 export type LogoTemplateElement = {
@@ -86,6 +97,10 @@ export type CustomTemplate = {
   /** width / height of the aspect used when designing */
   baseAspect: number;
   backgroundColor: string;
+  /** Public-file path for a cover-drawn still plate (e.g. `/wdc-bg.png`). */
+  backgroundImageSrc?: string;
+  /** Template-level chrome images drawn after the plate, before elements. */
+  overlayAssets?: TemplateOverlayAsset[];
   elements: TemplateElement[];
   /** Editor-only alignment guides (normalized 0–1). Not rendered on export. */
   guides?: TemplateGuides;
@@ -128,11 +143,15 @@ export function getTemplateGuides(template: CustomTemplate): TemplateGuides {
 export type CustomSlideImageSlot = {
   url: string | null;
   edits?: ImageEditSettings;
+  /** Paint the PNG alpha as white so the mark reads on a dark plate. */
+  whiteOverlay?: boolean;
 };
 
 export type CustomSlideContent = {
   fields: Record<string, string>;
   images: Record<string, CustomSlideImageSlot>;
+  plateEdits?: ImageEditSettings;
+  plateMode?: WdcPlateMode;
 };
 
 export const CUSTOM_TEMPLATES_STORAGE_KEY = "vdid-lab-custom-templates-v1";
@@ -225,6 +244,58 @@ export function cloneTemplate(template: CustomTemplate, name?: string): CustomTe
   };
 }
 
+function parseDefaultEdits(raw: unknown): ImageEditSettings | undefined {
+  if (typeof raw !== "object" || raw === null) return undefined;
+  const o = raw as Partial<ImageEditSettings>;
+  const focal = o.focalPoint;
+  return {
+    focalPoint:
+      focal && typeof focal.x === "number" && typeof focal.y === "number"
+        ? { x: clamp01(focal.x), y: clamp01(focal.y) }
+        : { x: 0.5, y: 0.5 },
+    overlayEnabled: o.overlayEnabled === true,
+    overlayOpacity: typeof o.overlayOpacity === "number" ? o.overlayOpacity : 0.35,
+    grayscaleEnabled: o.grayscaleEnabled === true,
+    blueTintEnabled: o.blueTintEnabled === true,
+    blueTintOpacity:
+      typeof o.blueTintOpacity === "number" ? o.blueTintOpacity : 0.22,
+  };
+}
+
+function parseOverlayAsset(raw: unknown): TemplateOverlayAsset | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const o = raw as Partial<TemplateOverlayAsset>;
+  if (typeof o.src !== "string" || !o.src) return null;
+  const fit =
+    o.fit === "cover" || o.fit === "contain" || o.fit === "stretch"
+      ? o.fit
+      : "contain";
+  return {
+    src: o.src,
+    box: normalizeBox(o.box),
+    fit,
+    backgroundFill:
+      typeof o.backgroundFill === "string" ? o.backgroundFill : undefined,
+  };
+}
+
+function parseOverlayAssets(raw: unknown): TemplateOverlayAsset[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const assets = raw
+    .map(parseOverlayAsset)
+    .filter((a): a is TemplateOverlayAsset => a != null);
+  return assets.length > 0 ? assets : undefined;
+}
+
+export function collectTemplateAssetSrcs(template: CustomTemplate): string[] {
+  const srcs: string[] = [];
+  if (template.backgroundImageSrc) srcs.push(template.backgroundImageSrc);
+  for (const overlay of template.overlayAssets ?? []) {
+    srcs.push(overlay.src);
+  }
+  return srcs;
+}
+
 function parseTextStyle(raw: unknown): TextElementStyle {
   const o = raw as Partial<TextElementStyle>;
   return {
@@ -270,6 +341,7 @@ function parseElement(raw: unknown): TemplateElement | null {
         slot: typeof o.slot === "string" ? o.slot : "image",
         label: typeof o.label === "string" ? o.label : "Foto",
         box,
+        defaultEdits: parseDefaultEdits(o.defaultEdits),
       };
     case "logo":
       return {
@@ -326,6 +398,9 @@ export function parseCustomTemplate(raw: unknown): CustomTemplate | null {
     baseAspect,
     backgroundColor:
       typeof o.backgroundColor === "string" ? o.backgroundColor : "#F0F0F0",
+    backgroundImageSrc:
+      typeof o.backgroundImageSrc === "string" ? o.backgroundImageSrc : undefined,
+    overlayAssets: parseOverlayAssets(o.overlayAssets),
     elements: squareLogoElements(elements, baseAspect),
     guides: normalizeGuides(o.guides),
   };
@@ -399,7 +474,12 @@ export function defaultContentForTemplate(template: CustomTemplate): CustomSlide
       fields[el.field] = el.defaultText;
     }
     if (el.kind === "image" || el.kind === "partnerLogo") {
-      images[el.slot] = { url: null };
+      images[el.slot] = {
+        url: null,
+        ...(el.kind === "image" && el.defaultEdits
+          ? { edits: el.defaultEdits }
+          : {}),
+      };
     }
   }
   return { fields, images };
@@ -563,6 +643,8 @@ export const TEMPLATE_IMAGE_SLOT_OPTIONS = [
   { id: "photo", label: "Eventfoto", elementLabel: "Foto" },
   { id: "hero", label: "Vollflächiges Bild", elementLabel: "Bild" },
   { id: "partner", label: "Partner-Logo", elementLabel: "Partner-Logo" },
+  { id: "partner2", label: "Partner-Logo 2", elementLabel: "Partner-Logo 2" },
+  { id: "partner3", label: "Partner-Logo 3", elementLabel: "Partner-Logo 3" },
 ] as const;
 
 const TEXT_FIELD_IDS = new Set(

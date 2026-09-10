@@ -1,6 +1,8 @@
 "use client";
 
 import React from "react";
+import Link from "next/link";
+import { APP_VERSION_LABEL, versionedPath } from "@/lib/app-version";
 import { publicFile } from "@/lib/public-file";
 
 export function VdidSidebarLogo() {
@@ -15,11 +17,13 @@ export function VdidSidebarLogo() {
 
 type GeneratorPageShellProps = {
   title: string;
+  nav?: React.ReactNode;
   children: React.ReactNode;
 };
 
 export function GeneratorPageShell({
   title,
+  nav,
   children,
 }: GeneratorPageShellProps) {
   return (
@@ -27,7 +31,13 @@ export function GeneratorPageShell({
       <div className="flex gap-6">
         <div className="sticky top-6 h-fit flex flex-col items-start">
           <VdidSidebarLogo />
-          <h1 className="text-lg font-medium text-white">{title}</h1>
+          <Link href={versionedPath("/")} className="group">
+            <h1 className="text-lg font-medium text-white">{title}</h1>
+            <p className="text-xs text-white/55 group-hover:text-white/80">
+              {APP_VERSION_LABEL}
+            </p>
+          </Link>
+          {nav ? <div className="mt-3">{nav}</div> : null}
         </div>
 
         <div className="flex-1 flex justify-center">

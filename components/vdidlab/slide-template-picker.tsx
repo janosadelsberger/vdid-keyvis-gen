@@ -184,6 +184,9 @@ export type SlideTemplatePickerProps = {
   onChange: (type: SlideType) => void;
   onSelectCustom?: (templateId: string) => void;
   id?: string;
+  hideBuiltins?: boolean;
+  customCaptions?: Record<string, string>;
+  thumbnailAspectClass?: string;
 };
 
 export function SlideTemplatePicker({
@@ -194,6 +197,9 @@ export function SlideTemplatePicker({
   onChange,
   onSelectCustom,
   id = "slide-template",
+  hideBuiltins = false,
+  customCaptions,
+  thumbnailAspectClass = "aspect-[4/5]",
 }: SlideTemplatePickerProps) {
   const [customThumbs, setCustomThumbs] = React.useState<Map<string, string>>(
     new Map(),
@@ -219,7 +225,9 @@ export function SlideTemplatePicker({
 
   const captionText =
     value === "custom"
-      ? "Eigene Vorlage mit Platzhaltern — Inhalte in den Feldern unten ausfüllen."
+      ? customTemplateId && customCaptions?.[customTemplateId]
+        ? customCaptions[customTemplateId]
+        : "Eigene Vorlage mit Platzhaltern — Inhalte in den Feldern unten ausfüllen."
       : SLIDE_TYPE_CAPTIONS[value as keyof typeof SLIDE_TYPE_CAPTIONS];
 
   return (
@@ -229,7 +237,7 @@ export function SlideTemplatePicker({
         aria-label="Vorlage wählen"
         className="flex flex-nowrap gap-2 overflow-x-auto pb-1"
       >
-        {SLIDE_TYPES_ORDER.map((type) => {
+        {!hideBuiltins && SLIDE_TYPES_ORDER.map((type) => {
           const selected = type === value && value !== "custom";
           return (
             <button
@@ -286,7 +294,10 @@ export function SlideTemplatePicker({
             >
               <span
                 className={cn(
-                  "block aspect-[4/5] w-full overflow-hidden rounded-md ring-1 transition-shadow",
+                  cn(
+                    "block w-full overflow-hidden rounded-md ring-1 transition-shadow",
+                    thumbnailAspectClass,
+                  ),
                   selected ? "ring-vdidBlue/40" : "ring-slate-200",
                 )}
               >

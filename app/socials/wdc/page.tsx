@@ -4,10 +4,10 @@ import { GeneratorPageShell } from "@/components/generator-page-shell";
 import { SocialsSectionNav } from "@/components/vdidlab/socials-section-nav";
 import { VdidLabGenerator } from "@/components/vdidlab/vdidlab-generator";
 
-export default function SocialsPage() {
+export default function WdcSocialsPage() {
   return (
-    <GeneratorPageShell title="Socials" nav={<SocialsSectionNav />}>
-      <VdidLabGenerator family="lab" />
+    <GeneratorPageShell title="WDC / Designforum" nav={<SocialsSectionNav />}>
+      <VdidLabGenerator family="wdc" />
     </GeneratorPageShell>
   );
 }

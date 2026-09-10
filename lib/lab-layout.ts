@@ -13,6 +13,9 @@ export const LAB_REF_PX = 1080;
  */
 export const VDID_LOGO_VIEWBOX_PX = 200;
 
+/** White mark square in the lockup SVG (top-left of the 200×200 viewBox). */
+export const VDID_LOGO_MARK_SQUARE_PX = 100;
+
 /** Logo height as a fraction of canvas height, before the pixel cap. */
 export const LAB_LOGO_HEIGHT_RATIO = 0.135;
 

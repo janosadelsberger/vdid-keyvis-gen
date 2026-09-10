@@ -24,6 +24,7 @@ export type ImageEditModalProps = {
   onClearImage?: () => void;
   uploadHint?: string;
   idPrefix?: string;
+  defaultSettings?: ImageEditSettings;
 };
 
 export function ImageEditModal({
@@ -38,6 +39,7 @@ export function ImageEditModal({
   onClearImage,
   uploadHint,
   idPrefix = "image-edit-modal",
+  defaultSettings,
 }: ImageEditModalProps) {
   const [loadedPreview, setLoadedPreview] =
     React.useState<HTMLImageElement | null>(null);
@@ -73,11 +75,20 @@ export function ImageEditModal({
 
   if (!open || typeof document === "undefined") return null;
 
-  const canPreview = !!loadedPreview && !!naturalSize;
+  const previewSize =
+    naturalSize ??
+    (loadedPreview
+      ? {
+          width: loadedPreview.naturalWidth || loadedPreview.width,
+          height: loadedPreview.naturalHeight || loadedPreview.height,
+        }
+      : null);
+  const canPreview =
+    !!loadedPreview && !!previewSize && previewSize.width > 0 && previewSize.height > 0;
   const showUpload = !!onFileSelected;
 
   const handleReset = () => {
-    onSettingsChange({ ...DEFAULT_IMAGE_EDIT_SETTINGS });
+    onSettingsChange({ ...(defaultSettings ?? DEFAULT_IMAGE_EDIT_SETTINGS) });
   };
 
   return createPortal(
@@ -109,10 +120,10 @@ export function ImageEditModal({
             />
           )}
 
-          {canPreview && (
+          {loadedPreview && previewSize && previewSize.width > 0 && (
             <ImageEditPreview
               image={loadedPreview}
-              naturalSize={naturalSize}
+              naturalSize={previewSize}
               settings={settings}
               onFocalPointChange={(focalPoint) =>
                 onSettingsChange({ ...settings, focalPoint })

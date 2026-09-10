@@ -60,12 +60,20 @@ export function drawBackgroundCover(
   focalX: number,
   focalY: number,
   grayscale: boolean,
+  extraZoom = 1,
 ) {
-  const iw = img.naturalWidth || img.width;
-  const ih = img.naturalHeight || img.height;
+  const iw =
+    (img as HTMLVideoElement).videoWidth ||
+    img.naturalWidth ||
+    img.width;
+  const ih =
+    (img as HTMLVideoElement).videoHeight ||
+    img.naturalHeight ||
+    img.height;
   if (iw <= 0 || ih <= 0) return;
 
-  const scale = Math.max(width / iw, height / ih);
+  const zoom = Math.max(1, extraZoom);
+  const scale = Math.max(width / iw, height / ih) * zoom;
   const drawW = iw * scale;
   const drawH = ih * scale;
   const dxIdeal = width / 2 - focalX * drawW;
@@ -111,6 +119,7 @@ export function drawEditedImageCover(
   w: number,
   h: number,
   settings: ImageEditSettings,
+  extraZoom = 1,
 ) {
   ctx.save();
   ctx.beginPath();
@@ -125,6 +134,7 @@ export function drawEditedImageCover(
     settings.focalPoint.x,
     settings.focalPoint.y,
     settings.grayscaleEnabled,
+    extraZoom,
   );
   applyImageEditOverlays(ctx, w, h, settings);
   ctx.restore();

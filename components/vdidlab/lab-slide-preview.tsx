@@ -8,6 +8,12 @@ import {
   type LabLogoStyle,
   type RenderAssets,
 } from "@/lib/lab-slide-render";
+import {
+  beginHdrHeadlineCollection,
+  consumeHdrHeadlinePasses,
+  get2dContext,
+  paintHdrHeadlinePasses,
+} from "@/lib/hdr-headline";
 import { cn } from "@/lib/utils";
 
 export type LabSlidePreviewProps = {
@@ -20,6 +26,9 @@ export type LabSlidePreviewProps = {
   slideImagesRef: React.RefObject<Map<string, HTMLImageElement>>;
   partnerLogosRef: React.RefObject<Map<string, HTMLImageElement>>;
   customTemplatesRef?: React.RefObject<Map<string, CustomTemplate>>;
+  bundledImagesRef?: React.RefObject<Map<string, HTMLImageElement>>;
+  backgroundVideoRef?: React.RefObject<HTMLVideoElement | null>;
+  animateVideo?: boolean;
   logoStyle?: LabLogoStyle;
   logoLoaded: boolean;
   /** Bump when async images finish loading into the ref maps. */
@@ -30,6 +39,8 @@ export type LabSlidePreviewProps = {
   onClick?: () => void;
   disabled?: boolean;
   ariaLabel?: string;
+  hdrHeadline?: boolean;
+  hdrHeadlineAmount?: number;
 };
 
 export const LabSlidePreview = React.forwardRef<
@@ -46,6 +57,9 @@ export const LabSlidePreview = React.forwardRef<
     slideImagesRef,
     partnerLogosRef,
     customTemplatesRef,
+    bundledImagesRef,
+    backgroundVideoRef,
+    animateVideo = false,
     logoStyle = "color",
     logoLoaded,
     renderRevision = 0,
@@ -55,10 +69,13 @@ export const LabSlidePreview = React.forwardRef<
     onClick,
     disabled,
     ariaLabel,
+    hdrHeadline = false,
+    hdrHeadlineAmount,
   },
   ref,
 ) {
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
+  const hdrOverlayRef = React.useRef<HTMLCanvasElement>(null);
 
   React.useImperativeHandle(ref, () => canvasRef.current as HTMLCanvasElement);
 
@@ -66,27 +83,60 @@ export const LabSlidePreview = React.forwardRef<
     const canvas = canvasRef.current;
     const logo = logoRef.current;
     if (!canvas || !logo || !logoLoaded) return;
-    const ctx = canvas.getContext("2d");
+    const ctx = get2dContext(canvas);
     if (!ctx) return;
 
     canvas.width = width;
     canvas.height = height;
 
-    const assets: RenderAssets = {
-      logoStyle,
-      logo,
-      logoWhite: logoWhiteRef?.current ?? null,
-      slideImages: slideImagesRef.current ?? new Map(),
-      partnerLogos: partnerLogosRef.current ?? new Map(),
-      customTemplates: customTemplatesRef?.current ?? new Map(),
+    let overlayPainted = false;
+
+    const draw = () => {
+      const assets: RenderAssets = {
+        logoStyle,
+        logo,
+        logoWhite: logoWhiteRef?.current ?? null,
+        slideImages: slideImagesRef.current ?? new Map(),
+        partnerLogos: partnerLogosRef.current ?? new Map(),
+        customTemplates: customTemplatesRef?.current ?? new Map(),
+        bundledImages: bundledImagesRef?.current ?? new Map(),
+        backgroundVideo: backgroundVideoRef?.current ?? null,
+        hdrHeadline,
+        hdrHeadlineAmount,
+      };
+      beginHdrHeadlineCollection();
+      renderLabSlideToContext(
+        ctx,
+        slide,
+        { width, height, topUiSafeInsetRatio },
+        assets,
+      );
+      const passes = consumeHdrHeadlinePasses(ctx);
+      const overlay = hdrOverlayRef.current;
+      if (!hdrHeadline || !overlay || overlayPainted) return;
+      if (passes.length === 0) return;
+      overlay.style.setProperty("dynamic-range", "high");
+      overlay.style.setProperty("dynamic-range-limit", "no-limit");
+      overlayPainted = true;
+      void paintHdrHeadlinePasses(overlay, width, height, passes).then(
+        (mode) => {
+          if (mode === "none") overlayPainted = false;
+        },
+      );
     };
 
-    renderLabSlideToContext(
-      ctx,
-      slide,
-      { width, height, topUiSafeInsetRatio },
-      assets,
-    );
+    draw();
+
+    const video = backgroundVideoRef?.current;
+    if (!animateVideo || !video || video.paused || video.ended) return;
+
+    let raf = 0;
+    const tick = () => {
+      draw();
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
   }, [
     slide,
     width,
@@ -95,26 +145,43 @@ export const LabSlidePreview = React.forwardRef<
     logoLoaded,
     renderRevision,
     logoStyle,
+    animateVideo,
     logoRef,
     logoWhiteRef,
     slideImagesRef,
     partnerLogosRef,
     customTemplatesRef,
+    bundledImagesRef,
+    backgroundVideoRef,
+    hdrHeadline,
+    hdrHeadlineAmount,
   ]);
 
-  const canvas = (
-    <canvas
-      ref={canvasRef}
-      className={cn("block max-w-full bg-[#F0F0F0]", canvasClassName)}
-      style={{
-        maxHeight,
-        aspectRatio: `${width} / ${height}`,
-      }}
-    />
+  const canvases = (
+    <div className="relative inline-block leading-none">
+      <canvas
+        ref={canvasRef}
+        className={cn("block max-w-full bg-[#F0F0F0]", canvasClassName)}
+        style={{
+          maxHeight,
+          aspectRatio: `${width} / ${height}`,
+        }}
+      />
+      {hdrHeadline ? (
+        <canvas
+          key="hdr-overlay"
+          ref={hdrOverlayRef}
+          className="pointer-events-none absolute inset-0 h-full w-full"
+          aria-hidden
+        />
+      ) : null}
+    </div>
   );
 
   if (!onClick) {
-    return <div className={cn("flex justify-center", className)}>{canvas}</div>;
+    return (
+      <div className={cn("flex justify-center", className)}>{canvases}</div>
+    );
   }
 
   return (
@@ -129,7 +196,7 @@ export const LabSlidePreview = React.forwardRef<
         disabled={disabled}
         aria-label={ariaLabel}
       >
-        {canvas}
+        {canvases}
       </button>
     </div>
   );
