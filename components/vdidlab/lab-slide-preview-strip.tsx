@@ -199,7 +199,7 @@ export function LabSlidePreviewStrip({
           <button
             type="button"
             onClick={onAddSlide}
-            className="ml-4 flex w-20 shrink-0 flex-col items-center justify-center gap-1 self-stretch rounded-md border border-dashed border-slate-300 bg-slate-50 text-sm text-slate-500 transition-colors hover:border-vdidBlue hover:text-vdidBlue"
+            className="ml-4 flex w-20 shrink-0 flex-col items-center justify-center gap-1 self-stretch rounded-md border border-dashed border-slate-300 bg-slate-50 text-sm text-slate-500 transition-colors hover:border-vdidBlue hover:text-vdidBlue dark:border-slate-600 dark:bg-slate-800 dark:text-slate-400 dark:hover:border-vdidBlueSoft dark:hover:text-vdidBlueSoft"
             aria-label="Slide hinzufügen"
           >
             <span className="text-2xl leading-none">+</span>

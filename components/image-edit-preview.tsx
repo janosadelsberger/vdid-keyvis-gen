@@ -105,7 +105,7 @@ export function ImageEditPreview({
         ref={containerRef}
         role="button"
         tabIndex={0}
-        className="relative mx-auto w-full max-w-xl cursor-crosshair rounded-md border border-slate-200 bg-slate-100 p-2"
+        className="relative mx-auto w-full max-w-xl cursor-crosshair rounded-md border border-slate-200 bg-slate-100 p-2 dark:border-slate-700 dark:bg-slate-800"
         style={{ minHeight: 120, maxHeight: 220 }}
         onClick={handleClick}
         onKeyDown={(ev) => {
@@ -125,7 +125,7 @@ export function ImageEditPreview({
           />
         )}
       </div>
-      <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600">
+      <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600 dark:text-slate-400">
         <span>
           Blickpunkt: {Math.round(settings.focalPoint.x * 100)}% ×{" "}
           {Math.round(settings.focalPoint.y * 100)}%

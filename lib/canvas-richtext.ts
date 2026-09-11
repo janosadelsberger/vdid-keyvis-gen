@@ -330,42 +330,7 @@ export function wrapRichText(
       if (isSpace) return;
     }
 
-    if (wordWidth > maxWidth && currentLine.length === 0 && !isSpace) {
-      let remaining = word;
-      while (remaining.length > 0) {
-        let chunk = remaining;
-        while (
-          chunk.length > 1 &&
-          measureRunWidth(
-            ctx,
-            { ...testRun, text: chunk },
-            fontSize,
-            fontWeight,
-            fontFamily,
-          ) > maxWidth
-        ) {
-          chunk = chunk.slice(0, -1);
-        }
-        remaining = remaining.slice(chunk.length);
-        if (remaining.length > 0) {
-          lines.push({
-            runs: [{ ...testRun, text: chunk }],
-            gapAfter: RICH_TEXT_WRAP_GAP,
-          });
-        } else {
-          appendRun(currentLine, style, chunk);
-          currentWidth = measureRunWidth(
-            ctx,
-            { ...testRun, text: chunk },
-            fontSize,
-            fontWeight,
-            fontFamily,
-          );
-        }
-      }
-      return;
-    }
-
+    // Never split a single word. fitRichTextFontSize shrinks until it fits.
     appendRun(currentLine, style, word);
     currentWidth += wordWidth;
   };
@@ -543,9 +508,60 @@ export type FitRichTextFontSizeOptions = {
   growRatio?: number;
 };
 
+function unbreakableWordWidths(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  fontSize: number,
+  fontWeight: string,
+  fontFamily: string,
+): number[] {
+  const widths: number[] = [];
+  let width = 0;
+  let hasGlyph = false;
+
+  const flush = () => {
+    if (hasGlyph) widths.push(width);
+    width = 0;
+    hasGlyph = false;
+  };
+
+  for (const run of parseRichText(text)) {
+    const style: RunStyle = {
+      bold: run.bold,
+      italic: run.italic,
+      highlight: run.highlight,
+    };
+    const parts = run.text.split(/(\n\u200B|\u2028|\n+|\s+)/);
+    for (const part of parts) {
+      if (!part) continue;
+      if (part === SOFT_RETURN || part === "\u2028" || part[0] === "\n") {
+        flush();
+        continue;
+      }
+      if (/^\s+$/u.test(part)) {
+        flush();
+        continue;
+      }
+      const glyph = part.replace(/[\u200B]+/gu, "");
+      if (!glyph) continue;
+      width += measureRunWidth(
+        ctx,
+        { text: glyph, ...style },
+        fontSize,
+        fontWeight,
+        fontFamily,
+      );
+      hasGlyph = true;
+    }
+  }
+  flush();
+  return widths;
+}
+
 /**
  * Pick a font size that uses available height: grows for short text, shrinks when
- * content would overflow maxHeight.
+ * content would overflow maxHeight. A single word that is wider than maxWidth
+ * also shrinks the whole block — words are never split mid-glyph.
  */
 export function fitRichTextFontSize(
   ctx: CanvasRenderingContext2D,
@@ -576,15 +592,28 @@ export function fitRichTextFontSize(
       fontFamily,
     );
 
+  const wordsFit = (size: number) =>
+    unbreakableWordWidths(ctx, text, size, fontWeight, fontFamily).every(
+      (width) => width <= maxWidth,
+    );
+
   let size = maxFontSize;
   const floor = Math.max(8, Math.round(minFontSize));
 
   while (size > floor && heightAt(size) > maxHeight) {
     size -= 1;
   }
+  // Long compounds may need to go below the usual min so they stay on one line.
+  while (size > 8 && !wordsFit(size)) {
+    size -= 1;
+  }
 
   const ceiling = Math.round(maxFontSize * growRatio);
-  while (size < ceiling && heightAt(size + 1) <= maxHeight) {
+  while (
+    size < ceiling &&
+    heightAt(size + 1) <= maxHeight &&
+    wordsFit(size + 1)
+  ) {
     size += 1;
   }
 

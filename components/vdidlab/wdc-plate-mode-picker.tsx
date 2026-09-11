@@ -38,8 +38,8 @@ export function WdcPlateModePicker({
               className={cn(
                 "rounded-lg border px-3 py-2 text-left text-sm font-medium transition-colors",
                 selected
-                  ? "border-vdidBlue bg-blue-50 text-slate-900"
-                  : "border-slate-200 bg-white text-slate-600 hover:border-slate-300",
+                  ? "border-vdidBlue bg-blue-50 text-slate-900 dark:bg-vdidBlue/20 dark:text-slate-100"
+                  : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:border-slate-500",
               )}
             >
               {WDC_PLATE_MODE_LABELS[key]}
@@ -47,7 +47,7 @@ export function WdcPlateModePicker({
           );
         })}
       </div>
-      <p className="text-xs text-slate-500">
+      <p className="text-xs text-slate-500 dark:text-slate-400">
         Animiert braucht die Videoplatte und wird als GIF/MP4 mit exportiert,
         wenn Animation angehakt ist. Still ist dasselbe Bild ohne Bewegung —
         gleicher Ausschnitt wie die Animation. Close-up ist das Standbild

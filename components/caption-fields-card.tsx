@@ -40,18 +40,18 @@ function PerformanceTipsModal({
       onClick={onClose}
     >
       <div
-        className="max-h-[min(85vh,720px)] w-full max-w-lg overflow-y-auto rounded-lg border border-slate-200 bg-white p-5 shadow-xl"
+        className="max-h-[min(85vh,720px)] w-full max-w-lg overflow-y-auto rounded-lg border border-slate-200 bg-white p-5 shadow-xl dark:border-slate-700 dark:bg-slate-900"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="border-b border-slate-100 pb-3">
+        <div className="border-b border-slate-100 pb-3 dark:border-slate-700">
           <h2
             id="caption-performance-modal-title"
-            className="text-lg font-semibold leading-snug text-slate-900"
+            className="text-lg font-semibold leading-snug text-slate-900 dark:text-slate-100"
           >
             {copy.title}
           </h2>
         </div>
-        <ul className="mt-4 list-disc space-y-2.5 pl-5 text-sm leading-relaxed text-slate-700">
+        <ul className="mt-4 list-disc space-y-2.5 pl-5 text-sm leading-relaxed text-slate-700 dark:text-slate-300">
           {copy.tips.map((item, idx) => (
             <li key={idx}>{item}</li>
           ))}
@@ -82,7 +82,7 @@ function CaptionFieldLabel({
         type="button"
         aria-label="Tipps für Reichweite und Performance anzeigen"
         aria-haspopup="dialog"
-        className="inline-flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded-full border border-slate-300 bg-white text-[11px] font-semibold leading-none text-slate-600 shadow-sm hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-vdidBlue focus-visible:ring-offset-1"
+        className="inline-flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded-full border border-slate-300 bg-white text-[11px] font-semibold leading-none text-slate-600 shadow-sm hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-vdidBlue focus-visible:ring-offset-1 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 dark:focus-visible:ring-offset-slate-900"
         onClick={onOpenTips}
       >
         i
@@ -104,7 +104,7 @@ function CharCount({
     <p
       className={cn(
         "text-xs tabular-nums",
-        over ? "font-medium text-red-700" : "text-slate-500",
+        over ? "font-medium text-red-700 dark:text-red-400" : "text-slate-500 dark:text-slate-400",
       )}
       aria-live="polite"
     >
@@ -145,7 +145,7 @@ export function CaptionFieldsCard({
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
           <div className="min-w-0 flex-1 space-y-1">
             <CardTitle>Captions</CardTitle>
-            <p className="text-sm font-normal leading-snug text-slate-600">
+            <p className="text-sm font-normal leading-snug text-slate-600 dark:text-slate-400">
               Begleittexte für die Kanäle — nicht auf der Grafik, nur für
               Veröffentlichung und ZIP (.txt).
             </p>

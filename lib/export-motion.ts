@@ -1,5 +1,6 @@
 import { applyPalette, GIFEncoder, quantize } from "gifenc";
 import { ArrayBufferTarget, Muxer } from "mp4-muxer";
+import { hasAvcDescription, packAvcChunk } from "@/lib/avc-bitstream";
 
 export const GIF_FPS = 10;
 export const GIF_MAX_DURATION_S = 4;
@@ -145,19 +146,71 @@ function canUseWebCodecsMp4(): boolean {
   );
 }
 
+function isGecko() {
+  return typeof navigator !== "undefined" && /Firefox\//.test(navigator.userAgent);
+}
+
+function isWindows() {
+  return typeof navigator !== "undefined" && /Windows/i.test(navigator.userAgent);
+}
+
+function isFirefoxWindows() {
+  return isGecko() && isWindows();
+}
+
+function isMissingDecoderConfigError(err: unknown) {
+  const message = err instanceof Error ? err.message : String(err);
+  return /decoderConfig is null|colorSpace/i.test(message);
+}
+
+function toFriendlyMp4Error(err: unknown): Error {
+  if (isMissingDecoderConfigError(err)) {
+    return new Error(
+      "MP4-Export in diesem Browser fehlgeschlagen. GIF funktioniert, oder Chrome/Edge für MP4 nutzen.",
+    );
+  }
+  return err instanceof Error ? err : new Error(String(err));
+}
+
 function mp4Bitrate(width: number, height: number) {
   return Math.round(
     Math.min(12_000_000, Math.max(5_000_000, width * height * 4.5)),
   );
 }
 
-function createExportCanvas(width: number, height: number) {
+function createExportCanvas(width: number, height: number, readback = false) {
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
-  const ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext("2d", readback ? { willReadFrequently: true } : undefined);
   if (!ctx) throw new Error("Canvas nicht verfügbar.");
   return { canvas, ctx };
+}
+
+function createEncodeFrame(
+  canvas: HTMLCanvasElement,
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  timestamp: number,
+  duration: number,
+  cpuCopy: boolean,
+): VideoFrame {
+  if (cpuCopy) {
+    try {
+      const pixels = ctx.getImageData(0, 0, width, height).data;
+      return new VideoFrame(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength), {
+        format: "RGBA",
+        codedWidth: width,
+        codedHeight: height,
+        timestamp,
+        duration,
+      });
+    } catch {
+      // Some Firefox builds reject RGBA buffers; canvas still works.
+    }
+  }
+  return new VideoFrame(canvas, { timestamp, duration });
 }
 
 async function pickAvcEncoderConfig(
@@ -165,33 +218,42 @@ async function pickAvcEncoderConfig(
   height: number,
 ): Promise<AvcEncoderConfig> {
   const bitrate = mp4Bitrate(width, height);
-  const accelerations = [
-    "prefer-hardware",
-    "prefer-software",
-    "no-preference",
-  ] as const;
+  const gecko = isGecko();
+  const firefoxWindows = isFirefoxWindows();
+  const accelerations = firefoxWindows
+    ? (["prefer-software", "no-preference"] as const)
+    : gecko
+      ? (["prefer-software", "no-preference", "prefer-hardware"] as const)
+      : (["prefer-hardware", "prefer-software", "no-preference"] as const);
+  const formats: Array<"avc" | "annexb" | null> = gecko
+    ? ["annexb", "avc", null]
+    : ["avc", "annexb", null];
 
   for (const hardwareAcceleration of accelerations) {
-    for (const codec of AVC_CODECS) {
-      const config: AvcEncoderConfig = {
-        codec,
-        width,
-        height,
-        bitrate,
-        framerate: VIDEO_FPS,
-        avc: { format: "avc" },
-        hardwareAcceleration,
-      };
-      const support = await VideoEncoder.isConfigSupported(config);
-      if (support.supported) {
-        return {
-          ...config,
-          codec: support.config?.codec ?? codec,
-          bitrate: support.config?.bitrate ?? bitrate,
+    for (const format of formats) {
+      for (const codec of AVC_CODECS) {
+        const config: AvcEncoderConfig = {
+          codec,
           width,
           height,
-          avc: { format: "avc" },
+          bitrate,
+          framerate: VIDEO_FPS,
+          hardwareAcceleration,
+          ...(format ? { avc: { format } } : {}),
         };
+        const support = await VideoEncoder.isConfigSupported(config);
+        if (support.supported) {
+          const next: AvcEncoderConfig = {
+            codec: support.config?.codec ?? codec,
+            width,
+            height,
+            bitrate: support.config?.bitrate ?? bitrate,
+            framerate: VIDEO_FPS,
+            hardwareAcceleration,
+          };
+          if (format) next.avc = { format };
+          return next;
+        }
       }
     }
   }
@@ -216,7 +278,8 @@ async function encodeSlideMp4WebCodecs(
   options: MotionEncodeOptions,
 ): Promise<Blob> {
   const { width, height, video, drawFrame, onProgress } = options;
-  const { canvas, ctx } = createExportCanvas(width, height);
+  const cpuCopy = isFirefoxWindows();
+  const { canvas, ctx } = createExportCanvas(width, height, cpuCopy);
   const config = await pickAvcEncoderConfig(width, height);
 
   const muxer = new Muxer({
@@ -231,10 +294,26 @@ async function encodeSlideMp4WebCodecs(
   });
 
   let encodeError: Error | null = null;
+  let decoderConfig: VideoDecoderConfig | null = null;
+  const frameDuration = Math.round(1e6 / VIDEO_FPS);
   const encoder = new VideoEncoder({
-    output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+    output: (chunk, meta) => {
+      try {
+        const packed = packAvcChunk(chunk, meta, decoderConfig, config.codec);
+        if (packed.decoderConfig) decoderConfig = packed.decoderConfig;
+        muxer.addVideoChunkRaw(
+          packed.data,
+          chunk.type,
+          chunk.timestamp,
+          chunk.duration ?? frameDuration,
+          packed.decoderConfig ? { decoderConfig: packed.decoderConfig } : undefined,
+        );
+      } catch (err) {
+        encodeError = toFriendlyMp4Error(err);
+      }
+    },
     error: (err) => {
-      encodeError = err instanceof Error ? err : new Error(String(err));
+      encodeError = toFriendlyMp4Error(err);
     },
   });
   try {
@@ -249,11 +328,16 @@ async function encodeSlideMp4WebCodecs(
         if (encodeError) throw encodeError;
         drawFrame(ctx);
         await waitForEncoderQueue(encoder);
-        const frame = new VideoFrame(canvas, {
-          timestamp: Math.round((index * 1e6) / VIDEO_FPS),
-          duration: Math.round(1e6 / VIDEO_FPS),
-        });
-        encoder.encode(frame, { keyFrame: index % VIDEO_FPS === 0 });
+        const frame = createEncodeFrame(
+          canvas,
+          ctx,
+          width,
+          height,
+          index * frameDuration,
+          frameDuration,
+          cpuCopy,
+        );
+        encoder.encode(frame, { keyFrame: index < 2 || index % VIDEO_FPS === 0 });
         frame.close();
       },
       onProgress,
@@ -266,7 +350,17 @@ async function encodeSlideMp4WebCodecs(
     if (encoder.state !== "closed") encoder.close();
   }
 
-  muxer.finalize();
+  if (!hasAvcDescription(decoderConfig)) {
+    throw new Error(
+      "MP4-Export in diesem Browser fehlgeschlagen. GIF funktioniert, oder Chrome/Edge für MP4 nutzen.",
+    );
+  }
+
+  try {
+    muxer.finalize();
+  } catch (err) {
+    throw toFriendlyMp4Error(err);
+  }
   const buffer = muxer.target.buffer;
   if (!buffer || buffer.byteLength < 32) {
     throw new Error("MP4-Datei ist leer.");
@@ -340,10 +434,15 @@ export async function encodeSlideVideo(
       if (pickMp4RecorderMime()) {
         return encodeSlideMp4Recorder(options);
       }
-      throw err;
+      throw toFriendlyMp4Error(err);
     }
   }
-  return encodeSlideMp4Recorder(options);
+  if (pickMp4RecorderMime()) {
+    return encodeSlideMp4Recorder(options);
+  }
+  throw new Error(
+    "MP4-Export wird in diesem Browser nicht unterstützt. GIF funktioniert, oder Chrome/Edge für MP4 nutzen.",
+  );
 }
 
 export function downloadBlob(blob: Blob, filename: string) {

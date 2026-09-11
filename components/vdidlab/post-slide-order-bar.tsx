@@ -134,7 +134,7 @@ export function PostSlideOrderBar({
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <span className="text-xs text-slate-500">Reihenfolge</span>
+      <span className="text-xs text-slate-500 dark:text-slate-400">Reihenfolge</span>
       <div
         className="flex flex-wrap items-center gap-1.5"
         onDragOver={(e) => {
@@ -192,12 +192,12 @@ export function PostSlideOrderBar({
               className={cn(
                 "inline-flex h-8 min-w-8 shrink-0 items-center justify-center rounded-md px-2 text-sm font-medium",
                 isPlaceholder
-                  ? "cursor-grabbing border-2 border-dashed border-vdidBlue bg-vdidBlue/5 text-vdidBlue/40"
+                  ? "cursor-grabbing border-2 border-dashed border-vdidBlue bg-vdidBlue/5 text-vdidBlue/40 dark:border-vdidBlueSoft dark:text-vdidBlueSoft/70"
                   : "cursor-grab active:cursor-grabbing",
                 !isPlaceholder &&
                   (isSelected
                     ? "bg-vdidBlue text-white"
-                    : "border border-slate-200 bg-white text-slate-900 hover:border-slate-300"),
+                    : "border border-slate-200 bg-white text-slate-900 hover:border-slate-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:border-slate-500"),
               )}
               aria-label={`Post ${i + 1}${isSelected ? ", ausgewählt" : ""}`}
               aria-current={isSelected ? "true" : undefined}
@@ -209,13 +209,13 @@ export function PostSlideOrderBar({
         })}
       </div>
       {(onDuplicate || onDelete) && (
-        <div className="flex items-center gap-1 border-l border-slate-200 pl-2">
+        <div className="flex items-center gap-1 border-l border-slate-200 pl-2 dark:border-slate-700">
           {onDuplicate && (
             <Button
               type="button"
               size="sm"
               variant="ghost"
-              className="h-8 px-2 text-xs text-slate-600"
+              className="h-8 px-2 text-xs text-slate-600 dark:text-slate-400"
               onClick={() => onDuplicate(selectedId)}
               aria-label="Post duplizieren"
               title="Duplizieren"
@@ -228,7 +228,7 @@ export function PostSlideOrderBar({
               type="button"
               size="sm"
               variant="ghost"
-              className="h-8 px-2 text-xs text-slate-600"
+              className="h-8 px-2 text-xs text-slate-600 dark:text-slate-400"
               disabled={slides.length <= 1}
               onClick={() => onDelete(selectedId)}
               aria-label="Post löschen"

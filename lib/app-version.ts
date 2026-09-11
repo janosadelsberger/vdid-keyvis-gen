@@ -1,9 +1,9 @@
-/** Public channel — also the URL prefix (`/beta/`). */
-export const APP_CHANNEL = "beta";
+/** Public channel — also the URL prefix (`/beta-v1.1/`). */
+export const APP_CHANNEL = "beta-v1.1";
 export const APP_VERSION_LABEL = APP_CHANNEL;
 export const APP_VERSION_PATH = `/${APP_CHANNEL}`;
 
-const LEGACY_VERSION_PREFIXES = ["/3/beta"];
+const LEGACY_VERSION_PREFIXES = ["/beta", "/3/beta"];
 
 export function versionedPath(path = "/"): string {
   const clean = path.startsWith("/") ? path : `/${path}`;

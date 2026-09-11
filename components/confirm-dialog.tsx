@@ -60,21 +60,21 @@ export function ConfirmDialog({
       onClick={onCancel}
     >
       <div
-        className="w-full max-w-md rounded-xl bg-white shadow-xl"
+        className="w-full max-w-md rounded-xl bg-white shadow-xl dark:bg-slate-900 dark:ring-1 dark:ring-white/10"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="border-b border-slate-200 px-5 py-4">
+        <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-700">
           <CardTitle id="confirm-dialog-title" className="text-lg">
             {title}
           </CardTitle>
         </div>
         <p
           id="confirm-dialog-description"
-          className="px-5 py-4 text-sm text-slate-600"
+          className="px-5 py-4 text-sm text-slate-600 dark:text-slate-400"
         >
           {description}
         </p>
-        <div className="flex justify-end gap-3 border-t border-slate-200 px-5 py-4">
+        <div className="flex justify-end gap-3 border-t border-slate-200 px-5 py-4 dark:border-slate-700">
           <Button
             type="button"
             variant="outline"

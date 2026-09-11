@@ -20,7 +20,7 @@ import {
 } from "@/lib/custom-template";
 
 const selectClassName =
-  "flex h-9 w-full rounded-md border border-input bg-background px-2 text-sm text-slate-900";
+  "flex h-9 w-full rounded-md border border-slate-300 bg-white px-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100";
 
 export type ElementPropertiesProps = {
   element: TemplateElement | null;
@@ -130,7 +130,7 @@ export function ElementProperties({
 }: ElementPropertiesProps) {
   if (!element) {
     return (
-      <p className="text-sm text-slate-500">
+      <p className="text-sm text-slate-500 dark:text-slate-400">
         Element auswählen oder neues hinzufügen.
       </p>
     );
@@ -143,7 +143,7 @@ export function ElementProperties({
 
   return (
     <div className="space-y-4">
-      <p className="text-sm font-medium text-slate-900">
+      <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
         {ELEMENT_KIND_LABELS[element.kind]}
       </p>
 
@@ -178,7 +178,7 @@ export function ElementProperties({
                 patch({ field } as Partial<TemplateElement>)
               }
             />
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-slate-500 dark:text-slate-400">
               Verknüpft mit dem gleichnamigen Eingabefeld im Generator.
             </p>
           </div>
@@ -376,7 +376,7 @@ export type TemplateMetaFieldsProps = {
 
 export function TemplateMetaFields({ template, onChange }: TemplateMetaFieldsProps) {
   return (
-    <div className="space-y-3 border-b border-slate-200 pb-4">
+    <div className="space-y-3 border-b border-slate-200 pb-4 dark:border-slate-700">
       <div className="space-y-1">
         <Label className="text-xs">Vorlagenname</Label>
         <Input

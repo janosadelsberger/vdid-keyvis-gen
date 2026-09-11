@@ -2,8 +2,28 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+  }
+}
+
 body {
   -webkit-font-smoothing: antialiased;
   font-feature-settings: "kern" 1;
+}
+
+::selection {
+  background: rgb(10 44 217 / 0.18);
+}
+
+@media (prefers-color-scheme: dark) {
+  ::selection {
+    background: rgb(10 44 217 / 0.4);
+  }
 }
 

@@ -539,7 +539,7 @@ function SlideImageUploadField({
   return (
     <div className="space-y-2 md:col-span-2">
       <Label htmlFor={id}>{label}</Label>
-      {hint && <p className="text-xs text-slate-500">{hint}</p>}
+      {hint && <p className="text-xs text-slate-500 dark:text-slate-400">{hint}</p>}
       <ImageDropZone
         id={id}
         previewUrl={imageUrl}
@@ -1648,7 +1648,7 @@ export function VdidLabGenerator({
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="rounded-md border border-slate-200 bg-slate-50 p-2">
+            <div className="rounded-md border border-slate-200 bg-slate-50 p-2 dark:border-slate-700 dark:bg-slate-800/60">
               <LabSlidePreviewStrip
                 slides={slides}
                 selectedId={selectedSlide?.id ?? null}
@@ -1686,12 +1686,12 @@ export function VdidLabGenerator({
                 onChange={(e) =>
                   setLogoStyle(e.target.value as LabLogoStyle)
                 }
-                className="flex h-10 w-full max-w-xs rounded-md border border-input bg-background px-3 py-2 text-sm text-slate-900 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                className="flex h-10 w-full max-w-xs rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm ring-offset-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vdidBlue focus-visible:ring-offset-2 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:ring-offset-slate-900"
               >
                 <option value="color">Farbig</option>
                 <option value="bw">Schwarzweiß</option>
               </select>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-slate-500 dark:text-slate-400">
                 Bei „Foto Vollbild“ wird automatisch die Variante mit dem besten
                 Kontrast zum Hintergrund gewählt.
               </p>
@@ -1705,7 +1705,7 @@ export function VdidLabGenerator({
             <CardTitle>Formate</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <p className="text-sm text-slate-600">
+            <p className="text-sm text-slate-600 dark:text-slate-400">
               Wähle die Ausgabeformate für das ZIP-Archiv.
             </p>
             <LabFormatPicker
@@ -1812,7 +1812,7 @@ export function VdidLabGenerator({
                             });
                           }
                         }}
-                        className="flex h-10 w-full max-w-md rounded-md border border-input bg-background px-3 py-2 text-sm text-slate-900 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                        className="flex h-10 w-full max-w-md rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm ring-offset-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vdidBlue focus-visible:ring-offset-2 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:ring-offset-slate-900"
                       >
                         {!selectedSlide.formatLabel?.trim() &&
                           !formatLineOtherMode && (
@@ -1854,7 +1854,7 @@ export function VdidLabGenerator({
                       }
                       placeholder="**Fett & blau**, *kursiv*, __fett__"
                     />
-                    <p className="text-xs text-slate-500">{MARKDOWN_FORMAT_HINT}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">{MARKDOWN_FORMAT_HINT}</p>
                   </div>
                   )}
                   {(selectedSlide.type === "quote" ||
@@ -1879,8 +1879,8 @@ export function VdidLabGenerator({
                         rows={4}
                         className="resize-y"
                       />
-                      <p className="text-xs text-slate-500">{MARKDOWN_FORMAT_HINT}</p>
-                      <p className="text-xs text-slate-500">{CANVAS_BREAK_HINT}</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">{MARKDOWN_FORMAT_HINT}</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">{CANVAS_BREAK_HINT}</p>
                     </div>
                   )}
                   {showDateLine && (
@@ -1943,11 +1943,11 @@ export function VdidLabGenerator({
                         }
                         placeholder="Anmeldungen an **mail@vdid.de**"
                       />
-                      <p className="text-xs text-slate-500">{MARKDOWN_FORMAT_HINT}</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">{MARKDOWN_FORMAT_HINT}</p>
                     </div>
                   )}
                   {!isCustomSlide && !showImage && !showPartnerLogo && (
-                    <p className="text-xs text-slate-500 md:col-span-2">
+                    <p className="text-xs text-slate-500 dark:text-slate-400 md:col-span-2">
                       Foto-Upload ist bei den Vorlagen{" "}
                       <strong>Event mit Foto</strong>, <strong>Foto Vollbild</strong>,{" "}
                       <strong>Co-Branding</strong> und <strong>Freitext</strong> verfügbar.
@@ -1999,7 +1999,7 @@ export function VdidLabGenerator({
                               Mit Weiß überlagern
                             </Label>
                           </div>
-                          <p className="text-xs text-slate-500">
+                          <p className="text-xs text-slate-500 dark:text-slate-400">
                             Nimmt den Alpha-Kanal der PNG und färbt das Logo
                             weiß — lesbar auf dunklem Grund.
                           </p>
@@ -2024,7 +2024,7 @@ export function VdidLabGenerator({
             <CardTitle>Export</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <p className="text-sm text-slate-600">
+            <p className="text-sm text-slate-600 dark:text-slate-400">
               {isWdc
                 ? "Alles oben Gewählte als ZIP — Formate, Captions und angehakte Animationen."
                 : "Bilder, Captions (.txt), PDF und Manifest als ZIP."}
@@ -2033,7 +2033,7 @@ export function VdidLabGenerator({
               <div className="flex flex-wrap items-start gap-x-10 gap-y-4">
                 {enabledRasterFormats.length > 0 && (
                   <div className="space-y-2">
-                    <p className="text-xs font-medium text-slate-500">
+                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
                       Bilddateiformat
                     </p>
                     <div className="flex flex-wrap gap-4">
@@ -2061,7 +2061,7 @@ export function VdidLabGenerator({
                 )}
                 {isWdc && (
                   <div className="space-y-2">
-                    <p className="text-xs font-medium text-slate-500">
+                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
                       Animation
                     </p>
                     <div className="flex flex-wrap gap-4">
@@ -2091,7 +2091,7 @@ export function VdidLabGenerator({
                       </label>
                     </div>
                     {!videoReady && (
-                      <p className="text-xs text-slate-500">
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
                         GIF und MP4 brauchen eine Platte unter{" "}
                         <code>public/wdc-bg.mp4</code>, <code>.webm</code> oder{" "}
                         <code>.mov</code>.
@@ -2180,7 +2180,7 @@ export function VdidLabGenerator({
 
         <div>
           {!logoLoaded && !logoError && (
-            <p className="mt-2 text-xs text-slate-500">Logo wird geladen …</p>
+            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">Logo wird geladen …</p>
           )}
           {logoError && (
             <p className="mt-2 text-xs text-red-700">{logoError}</p>

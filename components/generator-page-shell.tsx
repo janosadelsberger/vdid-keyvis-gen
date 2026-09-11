@@ -6,11 +6,21 @@ import { APP_VERSION_LABEL, versionedPath } from "@/lib/app-version";
 import { publicFile } from "@/lib/public-file";
 
 export function VdidSidebarLogo() {
-  const logoPath = publicFile("/VDID_Logo_neg.svg");
+  const lightLogo = publicFile("/VDID_Logo_rgb.svg");
+  const darkLogo = publicFile("/VDID_Logo_neg.svg");
 
   return (
     <div className="mb-2">
-      <img src={logoPath} alt="VDID Logo" className="w-16 h-16" />
+      <img
+        src={lightLogo}
+        alt="VDID Logo"
+        className="h-16 w-16 dark:hidden"
+      />
+      <img
+        src={darkLogo}
+        alt=""
+        className="hidden h-16 w-16 dark:block"
+      />
     </div>
   );
 }
@@ -32,8 +42,10 @@ export function GeneratorPageShell({
         <div className="sticky top-6 h-fit flex flex-col items-start">
           <VdidSidebarLogo />
           <Link href={versionedPath("/")} className="group">
-            <h1 className="text-lg font-medium text-white">{title}</h1>
-            <p className="text-xs text-white/55 group-hover:text-white/80">
+            <h1 className="text-lg font-medium text-slate-900 dark:text-slate-100">
+              {title}
+            </h1>
+            <p className="text-xs text-slate-500 group-hover:text-slate-700 dark:text-slate-400 dark:group-hover:text-slate-200">
               {APP_VERSION_LABEL}
             </p>
           </Link>
@@ -42,7 +54,7 @@ export function GeneratorPageShell({
 
         <div className="flex-1 flex justify-center">
           <div className="w-full max-w-6xl">
-            <div className="bg-white rounded-xl shadow-lg p-6 leading-relaxed text-slate-900 antialiased">
+            <div className="rounded-xl bg-white p-6 leading-relaxed text-slate-900 shadow-lg antialiased dark:bg-slate-900 dark:text-slate-100 dark:shadow-none dark:ring-1 dark:ring-white/10">
               {children}
             </div>
           </div>

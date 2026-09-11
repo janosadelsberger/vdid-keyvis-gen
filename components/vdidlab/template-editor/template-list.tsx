@@ -51,7 +51,7 @@ export function TemplateList({
           Neu
         </Button>
         <select
-          className="h-8 max-w-[10rem] rounded-md border border-input bg-background px-2 text-xs text-slate-900"
+          className="h-8 max-w-[10rem] rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
           defaultValue=""
           onChange={(e) => {
             const v = e.target.value;
@@ -80,7 +80,7 @@ export function TemplateList({
       </div>
       <div className="min-h-0 flex-1 space-y-2 overflow-y-auto">
         {templates.length === 0 && (
-          <p className="text-sm text-slate-500">Noch keine eigenen Vorlagen.</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">Noch keine eigenen Vorlagen.</p>
         )}
         {templates.map((t) => (
           <div
@@ -88,8 +88,8 @@ export function TemplateList({
             className={cn(
               "rounded-lg border p-2 transition-colors",
               selectedId === t.id
-                ? "border-vdidBlue bg-blue-50/50"
-                : "border-slate-200 hover:border-slate-300",
+                ? "border-vdidBlue bg-blue-50/50 dark:bg-vdidBlue/15"
+                : "border-slate-200 hover:border-slate-300 dark:border-slate-700 dark:hover:border-slate-500",
             )}
           >
             <button
@@ -106,7 +106,7 @@ export function TemplateList({
               ) : (
                 <div className="h-14 w-11 shrink-0 rounded bg-slate-100" />
               )}
-              <span className="text-sm font-medium text-slate-900">{t.name}</span>
+              <span className="text-sm font-medium text-slate-900 dark:text-slate-100">{t.name}</span>
             </button>
             <div className="mt-2 flex gap-1">
               <Button
@@ -166,7 +166,7 @@ export function ElementLayerList({
             type="button"
             className={cn(
               "flex w-full items-center justify-between rounded px-2 py-1 text-left text-xs",
-              selectedId === el.id ? "bg-vdidBlue text-white" : "hover:bg-slate-100",
+              selectedId === el.id ? "bg-vdidBlue text-white" : "hover:bg-slate-100 dark:hover:bg-slate-800",
             )}
             onClick={() => onSelect(el.id)}
           >

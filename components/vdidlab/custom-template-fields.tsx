@@ -66,7 +66,7 @@ export function CustomTemplateFields({
 
   if (textElements.length === 0 && imageElements.length === 0) {
     return (
-      <p className="text-sm text-slate-500 md:col-span-2">
+      <p className="text-sm text-slate-500 dark:text-slate-400 md:col-span-2">
         Diese Vorlage hat keine bearbeitbaren Platzhalter.
       </p>
     );
@@ -98,8 +98,8 @@ export function CustomTemplateFields({
             }
             className="resize-y"
           />
-          <p className="text-xs text-slate-500">{MARKDOWN_FORMAT_HINT}</p>
-          <p className="text-xs text-slate-500">{CANVAS_BREAK_HINT}</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400">{MARKDOWN_FORMAT_HINT}</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400">{CANVAS_BREAK_HINT}</p>
         </div>
       ))}
       {imageElements.map((el) => {
@@ -146,7 +146,7 @@ export function CustomTemplateFields({
                     Mit Weiß überlagern
                   </Label>
                 </div>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-slate-500 dark:text-slate-400">
                   Nimmt den Alpha-Kanal der PNG und färbt das Logo weiß — lesbar
                   auf dunklem Grund.
                 </p>

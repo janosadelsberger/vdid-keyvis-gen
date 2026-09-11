@@ -517,18 +517,18 @@ function PerformanceTipsModal({
       onClick={onClose}
     >
       <div
-        className="max-h-[min(85vh,720px)] w-full max-w-lg overflow-y-auto rounded-lg border border-slate-200 bg-white p-5 shadow-xl"
+        className="max-h-[min(85vh,720px)] w-full max-w-lg overflow-y-auto rounded-lg border border-slate-200 bg-white p-5 shadow-xl dark:border-slate-700 dark:bg-slate-900"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="border-b border-slate-100 pb-3">
+        <div className="border-b border-slate-100 pb-3 dark:border-slate-700">
           <h2
             id="caption-performance-modal-title"
-            className="text-lg font-semibold leading-snug text-slate-900"
+            className="text-lg font-semibold leading-snug text-slate-900 dark:text-slate-100"
           >
             {copy.title}
           </h2>
         </div>
-        <ul className="mt-4 list-disc space-y-2.5 pl-5 text-sm leading-relaxed text-slate-700">
+        <ul className="mt-4 list-disc space-y-2.5 pl-5 text-sm leading-relaxed text-slate-700 dark:text-slate-300">
           {copy.tips.map((item, idx) => (
             <li key={idx}>{item}</li>
           ))}
@@ -559,7 +559,7 @@ function CaptionFieldLabel({
         type="button"
         aria-label="Tipps für Reichweite und Performance anzeigen"
         aria-haspopup="dialog"
-        className="inline-flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded-full border border-slate-300 bg-white text-[11px] font-semibold leading-none text-slate-600 shadow-sm hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-vdidBlue focus-visible:ring-offset-1"
+        className="inline-flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded-full border border-slate-300 bg-white text-[11px] font-semibold leading-none text-slate-600 shadow-sm hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-vdidBlue focus-visible:ring-offset-1 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 dark:focus-visible:ring-offset-slate-900"
         onClick={onOpenTips}
       >
         i
@@ -581,7 +581,7 @@ function CharCount({
     <p
       className={cn(
         "text-xs tabular-nums",
-        over ? "font-medium text-red-700" : "text-slate-500",
+        over ? "font-medium text-red-700 dark:text-red-400" : "text-slate-500 dark:text-slate-400",
       )}
       aria-live="polite"
     >
@@ -1120,7 +1120,7 @@ export function EventAssetGenerator() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Left Column */}
             <div className="space-y-4">
-              <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/80 p-3">
+              <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/80 p-3 dark:border-slate-700 dark:bg-slate-800/60">
                 <div className="space-y-1">
                   <Label htmlFor="title">
                     Titel (im Bild)
@@ -1132,7 +1132,7 @@ export function EventAssetGenerator() {
                     onChange={handleChangeText("title")}
                     placeholder="erscheint als Hauptzeile auf allen Formaten"
                     rows={2}
-                    className="resize-none bg-white"
+                    className="resize-none bg-white dark:bg-slate-800"
                   />
                 </div>
                 <div className="space-y-1">
@@ -1146,7 +1146,7 @@ export function EventAssetGenerator() {
                     onChange={handleChangeText("copyright")}
                     placeholder="z. B. © Name · Foto: …"
                     rows={2}
-                    className="resize-none bg-white"
+                    className="resize-none bg-white dark:bg-slate-800"
                   />
                 </div>
               </div>
@@ -1173,7 +1173,7 @@ export function EventAssetGenerator() {
                   onChange={(e) => {
                     setForm((prev) => ({ ...prev, eventFormat: e.target.value }));
                   }}
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-slate-900 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm ring-offset-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vdidBlue focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:ring-offset-slate-900"
                 >
                   <option value="–">–</option>
                   <option value="VDID Design.Wissen.Diskurs.">
@@ -1274,7 +1274,7 @@ export function EventAssetGenerator() {
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
           <div className="min-w-0 flex-1 space-y-1">
             <CardTitle>Captions</CardTitle>
-            <p className="text-sm font-normal leading-snug text-slate-600">
+            <p className="text-sm font-normal leading-snug text-slate-600 dark:text-slate-400">
               Begleittexte für die Kanäle — nicht auf der Grafik, nur für
               Veröffentlichung und ZIP (.txt).
             </p>
@@ -1391,7 +1391,7 @@ export function EventAssetGenerator() {
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="w-full border border-slate-200 rounded-md bg-slate-50 p-2 overflow-auto">
+                <div className="w-full overflow-auto rounded-md border border-slate-200 bg-slate-50 p-2 dark:border-slate-700 dark:bg-slate-800/60">
                   <div className="flex justify-center">
                     <button
                       type="button"
@@ -1419,7 +1419,7 @@ export function EventAssetGenerator() {
         })}
         </div>
 
-        <div className="border-t border-slate-200 pt-6">
+        <div className="border-t border-slate-200 pt-6 dark:border-slate-700">
           <div className="flex flex-wrap items-center gap-3">
             <Button
               type="button"
@@ -1449,7 +1449,7 @@ export function EventAssetGenerator() {
             </p>
           )}
           {!logoLoaded && !logoLoadErrorUrl && (
-            <p className="mt-2 text-xs text-slate-500">Logo wird geladen…</p>
+            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">Logo wird geladen…</p>
           )}
           {logoLoadErrorUrl && (
             <p className="mt-2 text-xs text-red-700">

@@ -251,13 +251,13 @@ export function SlideTemplatePicker({
                 "group flex w-[5.75rem] shrink-0 flex-col items-center gap-1.5 rounded-lg border p-1.5 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vdidBlue focus-visible:ring-offset-1",
                 selected
                   ? "border-vdidBlue ring-2 ring-vdidBlue/30"
-                  : "border-slate-200 hover:border-slate-400",
+                  : "border-slate-200 hover:border-slate-400 dark:border-slate-700 dark:hover:border-slate-500",
               )}
             >
               <span
                 className={cn(
                   "block w-full overflow-hidden rounded-md ring-1 transition-shadow",
-                  selected ? "ring-vdidBlue/40" : "ring-slate-200",
+                  selected ? "ring-vdidBlue/40" : "ring-slate-200 dark:ring-slate-700",
                 )}
               >
                 <TemplateWireframe type={type} />
@@ -266,8 +266,8 @@ export function SlideTemplatePicker({
                 className={cn(
                   "text-[11px] leading-tight",
                   selected
-                    ? "font-medium text-vdidBlue"
-                    : "text-slate-600 group-hover:text-slate-900",
+                    ? "font-medium text-vdidBlue dark:text-vdidBlueSoft"
+                    : "text-slate-600 group-hover:text-slate-900 dark:text-slate-400 dark:group-hover:text-slate-100",
                 )}
               >
                 {SLIDE_TYPE_LABELS[type]}
@@ -289,7 +289,7 @@ export function SlideTemplatePicker({
                 "group flex w-[5.75rem] shrink-0 flex-col items-center gap-1.5 rounded-lg border p-1.5 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vdidBlue focus-visible:ring-offset-1",
                 selected
                   ? "border-vdidBlue ring-2 ring-vdidBlue/30"
-                  : "border-slate-200 hover:border-slate-400",
+                  : "border-slate-200 hover:border-slate-400 dark:border-slate-700 dark:hover:border-slate-500",
               )}
             >
               <span
@@ -298,7 +298,7 @@ export function SlideTemplatePicker({
                     "block w-full overflow-hidden rounded-md ring-1 transition-shadow",
                     thumbnailAspectClass,
                   ),
-                  selected ? "ring-vdidBlue/40" : "ring-slate-200",
+                  selected ? "ring-vdidBlue/40" : "ring-slate-200 dark:ring-slate-700",
                 )}
               >
                 {customThumbs.get(t.id) ? (
@@ -308,15 +308,15 @@ export function SlideTemplatePicker({
                     className="h-full w-full object-cover"
                   />
                 ) : (
-                  <div className="h-full w-full bg-slate-100" />
+                  <div className="h-full w-full bg-slate-100 dark:bg-slate-800" />
                 )}
               </span>
               <span
                 className={cn(
                   "line-clamp-2 text-[11px] leading-tight",
                   selected
-                    ? "font-medium text-vdidBlue"
-                    : "text-slate-600 group-hover:text-slate-900",
+                    ? "font-medium text-vdidBlue dark:text-vdidBlueSoft"
+                    : "text-slate-600 group-hover:text-slate-900 dark:text-slate-400 dark:group-hover:text-slate-100",
                 )}
               >
                 {t.name}
@@ -329,9 +329,9 @@ export function SlideTemplatePicker({
       <p
         id={`${id}-caption`}
         aria-live="polite"
-        className="text-sm leading-relaxed text-slate-600"
+        className="text-sm leading-relaxed text-slate-600 dark:text-slate-400"
       >
-        <span className="font-medium text-slate-900">{captionLabel}</span>
+        <span className="font-medium text-slate-900 dark:text-slate-100">{captionLabel}</span>
         {" — "}
         {captionText}
       </p>

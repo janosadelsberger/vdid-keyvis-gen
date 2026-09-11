@@ -93,8 +93,8 @@ export function LabFormatPicker({ enabled, onToggle }: LabFormatPickerProps) {
             className={cn(
               "group flex w-fit shrink-0 cursor-pointer flex-col items-center gap-2 rounded-lg border p-2 transition-colors",
               isOn
-                ? "border-vdidBlue/50 bg-blue-50/60 ring-1 ring-vdidBlue/20"
-                : "border-slate-200 bg-white hover:border-slate-300",
+                ? "border-vdidBlue/50 bg-blue-50/60 ring-1 ring-vdidBlue/20 dark:bg-vdidBlue/15"
+                : "border-slate-200 bg-white hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:hover:border-slate-500",
             )}
           >
             <div
@@ -113,7 +113,7 @@ export function LabFormatPicker({ enabled, onToggle }: LabFormatPickerProps) {
                 aria-label={spec.ariaLabel}
               />
             </div>
-            <span className="text-[11px] font-medium text-slate-600">
+            <span className="text-[11px] font-medium text-slate-600 dark:text-slate-400">
               {spec.shortLabel}
             </span>
           </label>

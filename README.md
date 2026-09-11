@@ -33,15 +33,15 @@ bun install
 bun dev
 ```
 
-4. Open [http://localhost:3000/beta/](http://localhost:3000/beta/)
+4. Open [http://localhost:3000/beta-v1.1/](http://localhost:3000/beta-v1.1/)
 
-**beta** routes:
+**beta-v1.1** routes:
 
-- `/beta/` — Keyvisual Generator
-- `/beta/socials/` — Socials Lab
-- `/beta/socials/wdc/` — WDC / Designforum
+- `/beta-v1.1/` — Keyvisual Generator
+- `/beta-v1.1/socials/` — Socials Lab
+- `/beta-v1.1/socials/wdc/` — WDC / Designforum
 
-The unversioned paths (`/`, `/socials/`, `/socials/wdc/`) still work.
+The previous `/beta/` paths and unversioned paths (`/`, `/socials/`, `/socials/wdc/`) still work.
 
 ## Building for Production
 

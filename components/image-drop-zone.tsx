@@ -92,8 +92,8 @@ export function ImageDropZone({
               ? "min-h-[120px] py-8"
               : "min-h-[140px] py-10",
           dropActive
-            ? "border-vdidBlue bg-blue-50 ring-2 ring-vdidBlue/25"
-            : "border-slate-300 bg-slate-50 hover:border-slate-400",
+            ? "border-vdidBlue bg-blue-50 ring-2 ring-vdidBlue/25 dark:bg-vdidBlue/15"
+            : "border-slate-300 bg-slate-50 hover:border-slate-400 dark:border-slate-600 dark:bg-slate-800 dark:hover:border-slate-500",
           className,
         )}
         onDragEnter={handleDragEnter}
@@ -129,17 +129,17 @@ export function ImageDropZone({
           </>
         ) : (
           <>
-            <p className="text-sm text-slate-700">
+            <p className="text-sm text-slate-700 dark:text-slate-300">
               <label
                 htmlFor={id}
-                className="cursor-pointer font-medium text-vdidBlue underline-offset-4 hover:underline"
+                className="cursor-pointer font-medium text-vdidBlue underline-offset-4 hover:underline dark:text-vdidBlueSoft"
               >
                 {chooseLabel}
               </label>
-              <span className="text-slate-600"> oder Bild hierher ziehen</span>
+              <span className="text-slate-600 dark:text-slate-400"> oder Bild hierher ziehen</span>
             </p>
             {hint && (
-              <p className="max-w-md text-xs text-slate-500">{hint}</p>
+              <p className="max-w-md text-xs text-slate-500 dark:text-slate-400">{hint}</p>
             )}
           </>
         )}

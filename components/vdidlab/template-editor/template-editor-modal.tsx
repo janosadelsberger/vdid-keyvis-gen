@@ -183,8 +183,8 @@ export function TemplateEditorModal({
       aria-modal="true"
       aria-label="Vorlagen bearbeiten"
     >
-      <div className="flex h-full flex-col bg-white">
-        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+      <div className="flex h-full flex-col bg-white text-slate-900 dark:bg-slate-900 dark:text-slate-100">
+        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-700">
           <CardTitle className="text-lg">Vorlagen bearbeiten</CardTitle>
           <Button type="button" variant="outline" onClick={onClose}>
             Schließen
@@ -192,7 +192,7 @@ export function TemplateEditorModal({
         </div>
 
         <div className="grid min-h-0 flex-1 grid-cols-1 gap-0 overflow-y-auto lg:grid-cols-[220px_1fr_260px] lg:overflow-hidden">
-          <aside className="min-h-0 overflow-y-auto border-b border-slate-200 p-4 lg:border-b-0 lg:border-r">
+          <aside className="min-h-0 overflow-y-auto border-b border-slate-200 p-4 dark:border-slate-700 lg:border-b-0 lg:border-r">
             <TemplateList
               templates={templates}
               selectedId={selectedTemplateId}
@@ -227,13 +227,13 @@ export function TemplateEditorModal({
                 onUpdateTemplate={updateTemplate}
               />
             ) : (
-              <p className="text-sm text-slate-500">
+              <p className="text-sm text-slate-500 dark:text-slate-400">
                 Vorlage anlegen oder aus der Liste wählen.
               </p>
             )}
           </main>
 
-          <aside className="flex min-h-0 flex-col border-t border-slate-200 lg:border-l lg:border-t-0">
+          <aside className="flex min-h-0 flex-col border-t border-slate-200 dark:border-slate-700 lg:border-l lg:border-t-0">
             {editorTemplate && (
               <>
                 <div className="min-h-0 flex-1 overflow-y-auto p-4">
@@ -242,7 +242,7 @@ export function TemplateEditorModal({
                     onChange={updateTemplate}
                   />
                   <div className="mb-3 mt-4">
-                    <p className="mb-2 text-xs font-medium text-slate-500">
+                    <p className="mb-2 text-xs font-medium text-slate-500 dark:text-slate-400">
                       Ebenen
                     </p>
                     <ElementLayerList
@@ -269,7 +269,7 @@ export function TemplateEditorModal({
                   />
                 </div>
                 {selectedElement && (
-                  <div className="shrink-0 border-t border-slate-200 p-4">
+                  <div className="shrink-0 border-t border-slate-200 p-4 dark:border-slate-700">
                     <Button
                       type="button"
                       variant="outline"

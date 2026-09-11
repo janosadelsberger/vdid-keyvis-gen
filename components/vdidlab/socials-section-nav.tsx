@@ -26,8 +26,8 @@ export function SocialsSectionNav() {
             className={cn(
               "rounded-md px-2 py-1 text-sm transition-colors",
               active
-                ? "bg-white/15 font-medium text-white"
-                : "text-white/70 hover:bg-white/10 hover:text-white",
+                ? "bg-vdidBlue/10 font-medium text-vdidBlue dark:bg-white/10 dark:text-white"
+                : "text-slate-600 hover:bg-slate-200/80 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-white/5 dark:hover:text-slate-100",
             )}
           >
             {link.label}
