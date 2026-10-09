@@ -242,13 +242,14 @@ export function ElementProperties({
                   ...element,
                   style: {
                     ...element.style,
-                    align: e.target.value as "left" | "right",
+                    align: e.target.value as "left" | "right" | "center",
                   },
                 })
               }
             >
               <option value="left">Links</option>
               <option value="right">Rechts</option>
+              <option value="center">Mitte</option>
             </select>
           </div>
         </>

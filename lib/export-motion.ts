@@ -291,6 +291,8 @@ async function encodeSlideMp4WebCodecs(
       frameRate: VIDEO_FPS,
     },
     fastStart: "in-memory",
+    // Hardware encoders often emit the first chunk at 1/fps, not 0.
+    firstTimestampBehavior: "offset",
   });
 
   let encodeError: Error | null = null;

@@ -17,7 +17,7 @@ export type DrawRichTextOptions = {
   baseColor?: string;
   highlightColor?: string;
   fontFamily?: string;
-  textAlign?: "left" | "right";
+  textAlign?: "left" | "right" | "center";
 };
 
 export const MARKDOWN_FORMAT_HINT =
@@ -412,7 +412,12 @@ export function drawRichText(
       fontWeight,
       fontFamily,
     );
-    let cx = textAlign === "right" ? x - lineWidth : x;
+    let cx =
+      textAlign === "right"
+        ? x - lineWidth
+        : textAlign === "center"
+          ? x + (maxWidth - lineWidth) / 2
+          : x;
 
     for (const run of line.runs) {
       ctx.fillStyle = run.highlight ? highlightColor : baseColor;

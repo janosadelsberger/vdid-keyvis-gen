@@ -29,6 +29,7 @@ import { boxToPixels } from "@/lib/custom-template";
 import type { RenderAssets, RenderImage, SlideDims } from "@/lib/lab-slide-render";
 import { FONT, LAB_BG, LAB_BLUE, LAB_MUTED, LAB_TEXT } from "@/lib/lab-theme";
 import { drawPartnerLogoInBox } from "@/lib/partner-logo";
+import { partnerAutoLayoutBoxes } from "@/lib/partner-logo-layout";
 import {
   WDC_BG_FILE,
   WDC_MARGIN,
@@ -219,7 +220,11 @@ function drawOverlayAsset(
 }
 
 function isWdcLeftColumn(el: TemplateElement) {
-  return el.kind === "text" && Math.abs(el.box.x - WDC_MARGIN) < 0.02;
+  return (
+    el.kind === "text" &&
+    !el.field.startsWith("partnerLabel") &&
+    Math.abs(el.box.x - WDC_MARGIN) < 0.02
+  );
 }
 
 function columnTextElements(template: CustomTemplate): TextTemplateElement[] {
@@ -248,10 +253,13 @@ function resolveElementText(
   content: CustomSlideContent,
   sampleMode: boolean,
 ) {
-  const text = sampleMode
-    ? el.defaultText || el.label
-    : (content.fields[el.field] ?? el.defaultText);
-  return text.trim();
+  if (sampleMode) {
+    if (el.field.startsWith("partnerLabel") && !el.defaultText.trim()) {
+      return "";
+    }
+    return (el.defaultText || el.label).trim();
+  }
+  return (content.fields[el.field] ?? el.defaultText).trim();
 }
 
 function textBoxMetrics(
@@ -336,13 +344,14 @@ function drawElement(
   sampleMode: boolean,
   logoBoxPx?: { x: number; y: number; w: number; h: number } | null,
   textYShift = 0,
+  boxOverride?: NormalizedBox,
 ) {
   const { width, height } = dims;
   const scale = Math.min(width, height) / 1080;
   const rawBox =
     el.kind === "logo" && logoBoxPx
       ? logoBoxPx
-      : boxToPixels(el.box, width, height);
+      : boxToPixels(boxOverride ?? el.box, width, height);
   const pinned = pinBoxToLogoLeft(el, rawBox, logoBoxPx ?? null);
   const box =
     textYShift !== 0 && isWdcLeftColumn(el)
@@ -437,7 +446,10 @@ function drawElement(
         height,
       );
       const inkInset =
-        el.style.align === "right" || !logoBoxPx || !isWdcLeftColumn(el)
+        el.style.align === "right" ||
+        el.style.align === "center" ||
+        !logoBoxPx ||
+        !isWdcLeftColumn(el)
           ? 0
           : measureLeftInkInset(
               ctx,
@@ -472,6 +484,21 @@ function drawElement(
       break;
     }
   }
+}
+
+function isPartnerSlotElement(el: TemplateElement) {
+  return (
+    el.kind === "partnerLogo" ||
+    (el.kind === "text" && el.field.startsWith("partnerLabel"))
+  );
+}
+
+function shouldDrawPartnerSlot(
+  el: TemplateElement,
+  partnerBoxes: Map<string, NormalizedBox> | null,
+) {
+  if (!partnerBoxes || !isPartnerSlotElement(el)) return true;
+  return partnerBoxes.has(el.id);
 }
 
 function wdcDrawnLogoBox(template: CustomTemplate, dims: SlideDims) {
@@ -510,8 +537,25 @@ export function renderCustomTemplateToContext(
         false,
       )
     : 0;
+  const partnerBoxes = partnerAutoLayoutBoxes(
+    template,
+    content,
+    assets.partnerLogos,
+    false,
+  );
   for (const el of template.elements) {
-    drawElement(ctx, el, content, dims, assets, false, logoBoxPx, textYShift);
+    if (!shouldDrawPartnerSlot(el, partnerBoxes)) continue;
+    drawElement(
+      ctx,
+      el,
+      content,
+      dims,
+      assets,
+      false,
+      logoBoxPx,
+      textYShift,
+      partnerBoxes?.get(el.id),
+    );
   }
 }
 
@@ -537,7 +581,14 @@ export function renderCustomTemplateSampleToContext(
         true,
       )
     : 0;
+  const partnerBoxes = partnerAutoLayoutBoxes(
+    template,
+    sampleContent,
+    assets.partnerLogos,
+    true,
+  );
   for (const el of template.elements) {
+    if (!shouldDrawPartnerSlot(el, partnerBoxes)) continue;
     drawElement(
       ctx,
       el,
@@ -547,6 +598,7 @@ export function renderCustomTemplateSampleToContext(
       true,
       logoBoxPx,
       textYShift,
+      partnerBoxes?.get(el.id),
     );
   }
 }

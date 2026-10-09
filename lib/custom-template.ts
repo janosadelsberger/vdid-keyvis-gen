@@ -18,7 +18,7 @@ export type TextElementStyle = {
   fontWeight: string;
   baseColor: string;
   highlightColor: string;
-  align: "left" | "right";
+  align: "left" | "right" | "center";
   lineHeightRatio: number;
   autoFit: boolean;
 };
@@ -307,7 +307,8 @@ function parseTextStyle(raw: unknown): TextElementStyle {
       typeof o.highlightColor === "string"
         ? o.highlightColor
         : DEFAULT_TEXT_STYLE.highlightColor,
-    align: o.align === "right" ? "right" : "left",
+    align:
+      o.align === "right" || o.align === "center" ? o.align : "left",
     lineHeightRatio:
       typeof o.lineHeightRatio === "number"
         ? o.lineHeightRatio

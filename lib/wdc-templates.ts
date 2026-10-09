@@ -304,27 +304,45 @@ const speaker = wdcTemplate("wdc-speaker", "Sprecher", [
   { ...logoEl(), id: "wdc-speaker-logo" },
 ]);
 
+const PARTNER_GAP = 0.04;
+const PARTNER_COL_W = (WDC_CONTENT_WIDTH - PARTNER_GAP) / 2;
+const PARTNER_TOP_Y = 0.26;
+const PARTNER_TOP_H = 0.28;
+const PARTNER_LABEL_H = 0.045;
+const PARTNER_BOT_Y = 0.58;
+const PARTNER_BOT_H = 0.22;
+
 const partner = wdcTemplate("wdc-partner", "Partner", [
   {
     id: "wdc-partner-1",
     kind: "partnerLogo",
     slot: "partner",
     label: "Partner-Logo 1",
-    box: { x: WDC_MARGIN, y: 0.34, w: 0.22, h: 0.2 },
+    box: { x: WDC_MARGIN, y: PARTNER_TOP_Y, w: PARTNER_COL_W, h: PARTNER_TOP_H },
   },
   {
     id: "wdc-partner-2",
     kind: "partnerLogo",
     slot: "partner2",
     label: "Partner-Logo 2",
-    box: { x: 0.325, y: 0.3, w: 0.26, h: 0.28 },
+    box: {
+      x: WDC_MARGIN + PARTNER_COL_W + PARTNER_GAP,
+      y: PARTNER_TOP_Y,
+      w: PARTNER_COL_W,
+      h: PARTNER_TOP_H,
+    },
   },
   {
     id: "wdc-partner-3",
     kind: "partnerLogo",
     slot: "partner3",
     label: "Partner-Logo 3",
-    box: { x: 0.61, y: 0.34, w: 0.22, h: 0.2 },
+    box: {
+      x: WDC_MARGIN + (WDC_CONTENT_WIDTH - PARTNER_COL_W) / 2,
+      y: PARTNER_BOT_Y,
+      w: PARTNER_COL_W,
+      h: PARTNER_BOT_H,
+    },
   },
   {
     id: "wdc-partner-label-1",
@@ -332,8 +350,13 @@ const partner = wdcTemplate("wdc-partner", "Partner", [
     field: "partnerLabel1",
     label: "Label 1",
     defaultText: "",
-    style: textStyle(0.016, { fontWeight: "400", autoFit: false }),
-    box: { x: WDC_MARGIN, y: 0.56, w: 0.22, h: 0.06 },
+    style: textStyle(0.016, { fontWeight: "400", align: "center", autoFit: false }),
+    box: {
+      x: WDC_MARGIN,
+      y: PARTNER_TOP_Y + PARTNER_TOP_H,
+      w: PARTNER_COL_W,
+      h: PARTNER_LABEL_H,
+    },
   },
   {
     id: "wdc-partner-label-2",
@@ -341,8 +364,13 @@ const partner = wdcTemplate("wdc-partner", "Partner", [
     field: "partnerLabel2",
     label: "Label 2",
     defaultText: "",
-    style: textStyle(0.016, { fontWeight: "400", autoFit: false }),
-    box: { x: 0.325, y: 0.6, w: 0.26, h: 0.06 },
+    style: textStyle(0.016, { fontWeight: "400", align: "center", autoFit: false }),
+    box: {
+      x: WDC_MARGIN + PARTNER_COL_W + PARTNER_GAP,
+      y: PARTNER_TOP_Y + PARTNER_TOP_H,
+      w: PARTNER_COL_W,
+      h: PARTNER_LABEL_H,
+    },
   },
   {
     id: "wdc-partner-label-3",
@@ -350,8 +378,13 @@ const partner = wdcTemplate("wdc-partner", "Partner", [
     field: "partnerLabel3",
     label: "Label 3",
     defaultText: "",
-    style: textStyle(0.016, { fontWeight: "400", autoFit: false }),
-    box: { x: 0.61, y: 0.56, w: 0.22, h: 0.06 },
+    style: textStyle(0.016, { fontWeight: "400", align: "center", autoFit: false }),
+    box: {
+      x: WDC_MARGIN + (WDC_CONTENT_WIDTH - PARTNER_COL_W) / 2,
+      y: PARTNER_BOT_Y + PARTNER_BOT_H,
+      w: PARTNER_COL_W,
+      h: PARTNER_LABEL_H,
+    },
   },
   { ...logoEl(), id: "wdc-partner-logo" },
 ]);
@@ -385,7 +418,7 @@ export const WDC_TEMPLATE_CAPTIONS: Record<string, string> = {
   "wdc-speaker":
     "Quadrat-Porträt (standardmäßig Schwarzweiß) mit Name und Titel.",
   "wdc-partner":
-    "Bis zu drei Partner-Logos. Ein Logo in der Mitte reicht für Mentor.",
+    "Bis zu drei Partner-Logos: eines zentriert, zwei nebeneinander oder untereinander, drei als zwei oben und eines darunter.",
 };
 
 export function collectWdcAssetSrcs(): string[] {
