@@ -9,6 +9,7 @@ import {
   normalizeGuides,
   TEMPLATE_EDITOR_WIDTH_PX,
   type CustomTemplate,
+  type DefaultElementTheme,
   type NormalizedBox,
   type TemplateElement,
   type TemplateGuides,
@@ -39,6 +40,7 @@ export type EditorCanvasProps = {
   selectedElementId: string | null;
   onSelectElement: (id: string | null) => void;
   onUpdateTemplate: (template: CustomTemplate) => void;
+  defaultElementTheme?: DefaultElementTheme;
 };
 
 type ElementDragMode = {
@@ -61,6 +63,7 @@ export function EditorCanvas({
   selectedElementId,
   onSelectElement,
   onUpdateTemplate,
+  defaultElementTheme,
 }: EditorCanvasProps) {
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
   const canvasAreaRef = React.useRef<HTMLDivElement>(null);
@@ -320,7 +323,11 @@ export function EditorCanvas({
   };
 
   const addElement = (kind: TemplateElement["kind"]) => {
-    const el = createDefaultElement(kind, template.baseAspect);
+    const el = createDefaultElement(
+      kind,
+      template.baseAspect,
+      defaultElementTheme,
+    );
     onUpdateTemplate({
       ...template,
       elements: [...template.elements, el],

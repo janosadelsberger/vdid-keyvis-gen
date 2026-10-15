@@ -51,10 +51,12 @@ export type TemplateOverlayAsset = {
   backgroundFill?: string;
 };
 
+export type LogoVariant = "auto" | "dark" | "white";
+
 export type LogoTemplateElement = {
   id: string;
   kind: "logo";
-  variant: "auto" | "dark" | "white";
+  variant: LogoVariant;
   box: NormalizedBox;
 };
 
@@ -402,7 +404,9 @@ export function parseCustomTemplate(raw: unknown): CustomTemplate | null {
     backgroundImageSrc:
       typeof o.backgroundImageSrc === "string" ? o.backgroundImageSrc : undefined,
     overlayAssets: parseOverlayAssets(o.overlayAssets),
-    elements: squareLogoElements(elements, baseAspect),
+    elements: o.backgroundImageSrc
+      ? elements
+      : squareLogoElements(elements, baseAspect),
     guides: normalizeGuides(o.guides),
   };
 }
@@ -428,10 +432,12 @@ export function serializeCustomTemplates(templates: CustomTemplate[]): string {
   return JSON.stringify(templates, null, 2);
 }
 
-export function loadCustomTemplatesFromStorage(): CustomTemplate[] {
+export function loadCustomTemplatesFromStorage(
+  key = CUSTOM_TEMPLATES_STORAGE_KEY,
+): CustomTemplate[] {
   if (typeof window === "undefined") return [];
   try {
-    const raw = localStorage.getItem(CUSTOM_TEMPLATES_STORAGE_KEY);
+    const raw = localStorage.getItem(key);
     if (!raw) return [];
     return parseCustomTemplates(raw);
   } catch {
@@ -439,23 +445,33 @@ export function loadCustomTemplatesFromStorage(): CustomTemplate[] {
   }
 }
 
-export function saveCustomTemplatesToStorage(templates: CustomTemplate[]): void {
+export function saveCustomTemplatesToStorage(
+  templates: CustomTemplate[],
+  key = CUSTOM_TEMPLATES_STORAGE_KEY,
+): void {
   if (typeof window === "undefined") return;
   try {
-    localStorage.setItem(CUSTOM_TEMPLATES_STORAGE_KEY, serializeCustomTemplates(templates));
+    localStorage.setItem(key, serializeCustomTemplates(templates));
   } catch {
     /* quota */
   }
 }
 
-export function exportTemplatesJson(templates: CustomTemplate[]): void {
+export function copyCustomTemplates(templates: CustomTemplate[]): CustomTemplate[] {
+  return parseCustomTemplates(serializeCustomTemplates(templates));
+}
+
+export function exportTemplatesJson(
+  templates: CustomTemplate[],
+  filename?: string,
+): void {
   const blob = new Blob([serializeCustomTemplates(templates)], {
     type: "application/json",
   });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = "vdid-custom-templates.json";
+  a.download = filename || "vdid-custom-templates.json";
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -486,11 +502,24 @@ export function defaultContentForTemplate(template: CustomTemplate): CustomSlide
   return { fields, images };
 }
 
+export type DefaultElementTheme = {
+  textColor?: string;
+  highlightColor?: string;
+  logoVariant?: LogoVariant;
+  logoBox?: NormalizedBox;
+  lineColor?: string;
+  contentX?: number;
+  contentW?: number;
+};
+
 export function createDefaultElement(
   kind: TemplateElement["kind"],
   baseAspect = 1080 / 1350,
+  theme?: DefaultElementTheme,
 ): TemplateElement {
   const id = createElementId();
+  const x = theme?.contentX ?? 0.08;
+  const w = theme?.contentW ?? 0.84;
   switch (kind) {
     case "text":
       return {
@@ -499,8 +528,15 @@ export function createDefaultElement(
         field: "text",
         label: "Text",
         defaultText: "Text",
-        style: { ...DEFAULT_TEXT_STYLE },
-        box: { x: 0.08, y: 0.2, w: 0.84, h: 0.12 },
+        style: {
+          ...DEFAULT_TEXT_STYLE,
+          baseColor: theme?.textColor ?? DEFAULT_TEXT_STYLE.baseColor,
+          highlightColor:
+            theme?.highlightColor ??
+            theme?.textColor ??
+            DEFAULT_TEXT_STYLE.highlightColor,
+        },
+        box: { x, y: 0.2, w, h: 0.12 },
       };
     case "image":
       return {
@@ -508,14 +544,14 @@ export function createDefaultElement(
         kind: "image",
         slot: "photo",
         label: "Foto",
-        box: { x: 0.08, y: 0.35, w: 0.84, h: 0.45 },
+        box: { x, y: 0.35, w, h: 0.45 },
       };
     case "logo":
       return {
         id,
         kind: "logo",
-        variant: "dark",
-        box: labLogoNormalizedBox(baseAspect),
+        variant: theme?.logoVariant ?? "dark",
+        box: theme?.logoBox ?? labLogoNormalizedBox(baseAspect),
       };
     case "partnerLogo":
       return {
@@ -523,7 +559,7 @@ export function createDefaultElement(
         kind: "partnerLogo",
         slot: "partner",
         label: "Partner-Logo",
-        box: { x: 0.7, y: 0.82, w: 0.22, h: 0.1 },
+        box: { x: x + w * 0.62, y: 0.72, w: w * 0.38, h: 0.12 },
       };
     case "rect":
       return {
@@ -538,9 +574,9 @@ export function createDefaultElement(
       return {
         id,
         kind: "line",
-        color: "#1A1A1A",
+        color: theme?.lineColor ?? "#1A1A1A",
         thicknessFraction: 0.002,
-        box: { x: 0.08, y: 0.5, w: 0.84, h: 0.01 },
+        box: { x, y: 0.5, w, h: 0.01 },
       };
   }
 }

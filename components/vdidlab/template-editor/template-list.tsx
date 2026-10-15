@@ -8,6 +8,11 @@ import { BUILTIN_TEMPLATE_PRESETS } from "@/lib/builtin-template-presets";
 import type { RenderAssets } from "@/lib/lab-slide-render";
 import { cn } from "@/lib/utils";
 
+export type TemplatePresetOption = {
+  id: string;
+  name: string;
+};
+
 export type TemplateListProps = {
   templates: CustomTemplate[];
   selectedId: string | null;
@@ -19,6 +24,8 @@ export type TemplateListProps = {
   onDelete: (id: string) => void;
   onImport: () => void;
   onExport: () => void;
+  presetOptions?: TemplatePresetOption[];
+  onResetDefaults?: () => void;
 };
 
 export function TemplateList({
@@ -32,7 +39,15 @@ export function TemplateList({
   onDelete,
   onImport,
   onExport,
+  presetOptions,
+  onResetDefaults,
 }: TemplateListProps) {
+  const presets =
+    presetOptions ??
+    BUILTIN_TEMPLATE_PRESETS.map((p) => ({
+      id: p.slideType,
+      name: p.name,
+    }));
   const [thumbs, setThumbs] = React.useState<Map<string, string>>(new Map());
 
   React.useEffect(() => {
@@ -65,8 +80,8 @@ export function TemplateList({
           <option value="" disabled>
             Aus Standard-Vorlage…
           </option>
-          {BUILTIN_TEMPLATE_PRESETS.map((p) => (
-            <option key={p.slideType} value={p.slideType}>
+          {presets.map((p) => (
+            <option key={p.id} value={p.id}>
               {p.name}
             </option>
           ))}
@@ -77,6 +92,11 @@ export function TemplateList({
         <Button type="button" size="sm" variant="outline" onClick={onExport}>
           Export
         </Button>
+        {onResetDefaults && (
+          <Button type="button" size="sm" variant="outline" onClick={onResetDefaults}>
+            Standard
+          </Button>
+        )}
       </div>
       <div className="min-h-0 flex-1 space-y-2 overflow-y-auto">
         {templates.length === 0 && (

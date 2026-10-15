@@ -70,6 +70,8 @@ import {
 } from "@/components/vdidlab/motion-export-controls";
 import { TemplateEditorModal } from "@/components/vdidlab/template-editor/template-editor-modal";
 import {
+  cloneTemplate,
+  CUSTOM_TEMPLATES_STORAGE_KEY,
   defaultContentForTemplate,
   loadCustomTemplatesFromStorage,
   saveCustomTemplatesToStorage,
@@ -81,6 +83,7 @@ import { loadBundledImages, probePublicVideo } from "@/lib/bundled-image";
 import { encodeSlideGif, encodeSlideVideo } from "@/lib/export-motion";
 import {
   WDC_BG_FILE,
+  WDC_CUSTOM_TEMPLATES_STORAGE_KEY,
   WDC_STORAGE_KEY,
   WDC_VIDEO_CANDIDATES,
   parseWdcPlateMode,
@@ -90,9 +93,12 @@ import { WdcPlateModePicker } from "@/components/vdidlab/wdc-plate-mode-picker";
 import { get2dContext } from "@/lib/hdr-headline";
 import {
   WDC_DEFAULT_TEMPLATE_ID,
+  WDC_EDITOR_ELEMENT_THEME,
   WDC_TEMPLATE_CAPTIONS,
   WDC_TEMPLATES,
   collectWdcAssetSrcs,
+  copyWdcShippedTemplates,
+  createBlankWdcTemplate,
 } from "@/lib/wdc-templates";
 
 export type { LabSlide, SlideType };
@@ -620,7 +626,7 @@ export function VdidLabGenerator({
     isWdc ? WDC_TEMPLATES : [],
   );
   const [templateEditorOpen, setTemplateEditorOpen] = React.useState(false);
-  const [customTemplatesHydrated, setCustomTemplatesHydrated] = React.useState(isWdc);
+  const [customTemplatesHydrated, setCustomTemplatesHydrated] = React.useState(false);
   const [videoReady, setVideoReady] = React.useState(false);
   const [zipBusy, setZipBusy] = React.useState<ZipExportPhase | null>(null);
   const [zipBusyDetail, setZipBusyDetail] = React.useState<string | undefined>();
@@ -713,25 +719,39 @@ export function VdidLabGenerator({
     }
   }, [previewFormat, previewFormatOptions, exportFormatsEnabled.pdf]);
 
+  const templatesStorageKey = isWdc
+    ? WDC_CUSTOM_TEMPLATES_STORAGE_KEY
+    : CUSTOM_TEMPLATES_STORAGE_KEY;
+
   React.useEffect(() => {
     if (isWdc) {
-      customTemplatesRef.current = new Map(WDC_TEMPLATES.map((t) => [t.id, t]));
-      setCustomTemplates(WDC_TEMPLATES);
+      const loaded = loadCustomTemplatesFromStorage(
+        WDC_CUSTOM_TEMPLATES_STORAGE_KEY,
+      );
+      const next = loaded.length > 0 ? loaded : copyWdcShippedTemplates();
+      setCustomTemplates(next);
+      customTemplatesRef.current = new Map(next.map((t) => [t.id, t]));
       setCustomTemplatesHydrated(true);
+      bumpPreview();
       return;
     }
     const loaded = loadCustomTemplatesFromStorage();
     setCustomTemplates(loaded);
     customTemplatesRef.current = new Map(loaded.map((t) => [t.id, t]));
     setCustomTemplatesHydrated(true);
-  }, [isWdc]);
+  }, [isWdc, bumpPreview]);
 
   React.useEffect(() => {
-    if (!customTemplatesHydrated || isWdc) return;
+    if (!customTemplatesHydrated) return;
     customTemplatesRef.current = new Map(customTemplates.map((t) => [t.id, t]));
-    saveCustomTemplatesToStorage(customTemplates);
+    saveCustomTemplatesToStorage(customTemplates, templatesStorageKey);
     bumpPreview();
-  }, [customTemplates, customTemplatesHydrated, bumpPreview, isWdc]);
+  }, [
+    customTemplates,
+    customTemplatesHydrated,
+    bumpPreview,
+    templatesStorageKey,
+  ]);
 
   React.useEffect(() => {
     if (!isWdc) return;
@@ -935,14 +955,19 @@ export function VdidLabGenerator({
 
   const addSlide = (type: SlideType = "eventPhoto") => {
     const slide = isWdc
-      ? createCustomSlide(WDC_DEFAULT_TEMPLATE_ID, WDC_TEMPLATES)
+      ? createCustomSlide(
+          customTemplates.some((t) => t.id === WDC_DEFAULT_TEMPLATE_ID)
+            ? WDC_DEFAULT_TEMPLATE_ID
+            : customTemplates[0]?.id ?? WDC_DEFAULT_TEMPLATE_ID,
+          customTemplates.length > 0 ? customTemplates : WDC_TEMPLATES,
+        )
       : createSlide(type);
     setSlides((prev) => [...prev, slide]);
     setSelectedId(slide.id);
   };
 
   const changeCustomTemplate = (id: string, templateId: string) => {
-    const catalog = isWdc ? WDC_TEMPLATES : customTemplates;
+    const catalog = customTemplates;
     setSlides((prev) =>
       prev.map((s) => {
         if (s.id !== id) return s;
@@ -980,7 +1005,7 @@ export function VdidLabGenerator({
 
     void loadImageFromUrl(url).then((img) => {
       mapRef.current.set(url, img);
-      const catalog = isWdc ? WDC_TEMPLATES : customTemplates;
+      const catalog = customTemplates;
       const template = catalog.find(
         (item) => item.id === selectedSlide.customTemplateId,
       );
@@ -1531,7 +1556,7 @@ export function VdidLabGenerator({
   };
 
   const isCustomSlide = selectedSlide?.type === "custom";
-  const templateCatalog = isWdc ? WDC_TEMPLATES : customTemplates;
+  const templateCatalog = customTemplates;
   const selectedCustomTemplate =
     isCustomSlide && selectedSlide?.customTemplateId
       ? templateCatalog.find((t) => t.id === selectedSlide.customTemplateId)
@@ -1609,7 +1634,6 @@ export function VdidLabGenerator({
           <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <CardTitle>Vorschau</CardTitle>
             <div className="flex flex-wrap items-center gap-2">
-              {!isWdc && (
               <Button
                 type="button"
                 variant="outline"
@@ -1618,7 +1642,6 @@ export function VdidLabGenerator({
               >
                 Vorlagen bearbeiten
               </Button>
-              )}
               {isWdc && (
               <Button
                 type="button"
@@ -2151,7 +2174,19 @@ export function VdidLabGenerator({
                   }
                   setSlides(
                     isWdc
-                      ? [createCustomSlide(WDC_DEFAULT_TEMPLATE_ID, WDC_TEMPLATES)]
+                      ? [
+                          createCustomSlide(
+                            customTemplates.some(
+                              (t) => t.id === WDC_DEFAULT_TEMPLATE_ID,
+                            )
+                              ? WDC_DEFAULT_TEMPLATE_ID
+                              : customTemplates[0]?.id ??
+                                  WDC_DEFAULT_TEMPLATE_ID,
+                            customTemplates.length > 0
+                              ? customTemplates
+                              : WDC_TEMPLATES,
+                          ),
+                        ]
                       : [createSlide("eventPhoto")],
                   );
                   setCaptions(EMPTY_CAPTIONS);
@@ -2189,7 +2224,7 @@ export function VdidLabGenerator({
       </div>
 
       <TemplateEditorModal
-        open={!isWdc && templateEditorOpen}
+        open={templateEditorOpen}
         onClose={() => setTemplateEditorOpen(false)}
         templates={customTemplates}
         onTemplatesChange={setCustomTemplates}
@@ -2200,9 +2235,44 @@ export function VdidLabGenerator({
             logoWhite: logoWhiteRef.current,
             slideImages: slideImagesRef.current,
             partnerLogos: partnerLogosRef.current,
+            bundledImages: bundledImagesRef.current,
+            backgroundVideo: backgroundVideoRef.current,
+            customTemplates: customTemplatesRef.current,
           }
         }
         editorAspect={editorAspect}
+        storageKey={templatesStorageKey}
+        lockLabLogoSquare={!isWdc}
+        createBlankTemplate={isWdc ? createBlankWdcTemplate : undefined}
+        createFromPreset={
+          isWdc
+            ? (presetId) => {
+                const src = WDC_TEMPLATES.find((t) => t.id === presetId);
+                return src ? cloneTemplate(src) : null;
+              }
+            : undefined
+        }
+        presetOptions={
+          isWdc
+            ? WDC_TEMPLATES.map((t) => ({ id: t.id, name: t.name }))
+            : undefined
+        }
+        defaultElementTheme={isWdc ? WDC_EDITOR_ELEMENT_THEME : undefined}
+        exportFilename={isWdc ? "wdc-custom-templates.json" : undefined}
+        onResetDefaults={
+          isWdc
+            ? () => {
+                if (
+                  !confirm(
+                    "Alle WDC-Vorlagen auf die Auslieferung zurücksetzen? Eigene Änderungen gehen verloren.",
+                  )
+                ) {
+                  return;
+                }
+                setCustomTemplates(copyWdcShippedTemplates());
+              }
+            : undefined
+        }
       />
 
       <ImageEditModal
