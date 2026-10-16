@@ -65,6 +65,7 @@ export const WDC_SIDEBAR_BOX = {
 } as const;
 
 export const WDC_STORAGE_KEY = "vdid-wdc-deck-v1";
+export const WDC_CUSTOM_TEMPLATES_STORAGE_KEY = "vdid-wdc-custom-templates-v1";
 
 export const WDC_PLATE_MODES = ["animated", "still", "closeup"] as const;
 export type WdcPlateMode = (typeof WDC_PLATE_MODES)[number];

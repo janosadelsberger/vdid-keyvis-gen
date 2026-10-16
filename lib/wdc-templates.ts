@@ -1,11 +1,16 @@
 import { DEFAULT_IMAGE_EDIT_SETTINGS } from "@/lib/image-edit";
 import type {
   CustomTemplate,
+  DefaultElementTheme,
   TemplateElement,
   TemplateOverlayAsset,
   TextTemplateElement,
 } from "@/lib/custom-template";
-import { collectTemplateAssetSrcs } from "@/lib/custom-template";
+import {
+  collectTemplateAssetSrcs,
+  copyCustomTemplates,
+  createElementId,
+} from "@/lib/custom-template";
 import {
   WDC_BG_FILE,
   WDC_BLUE,
@@ -404,6 +409,39 @@ export const WDC_TEMPLATE_MAP = new Map(
 );
 
 export const WDC_DEFAULT_TEMPLATE_ID = title.id;
+
+export const WDC_EDITOR_ELEMENT_THEME: DefaultElementTheme = {
+  textColor: WDC_TEXT,
+  highlightColor: WDC_TEXT,
+  logoVariant: "white",
+  logoBox: { ...WDC_LOGO_BOX },
+  lineColor: WDC_TEXT,
+  contentX: WDC_MARGIN,
+  contentW: WDC_CONTENT_WIDTH,
+};
+
+export function copyWdcShippedTemplates(): CustomTemplate[] {
+  return copyCustomTemplates(WDC_TEMPLATES);
+}
+
+export function createBlankWdcTemplate(name = "Neue Vorlage"): CustomTemplate {
+  return wdcTemplate(crypto.randomUUID(), name, [
+    {
+      id: createElementId(),
+      kind: "text",
+      field: "heading",
+      label: "Titel",
+      defaultText: "Titel",
+      style: textStyle(0.052, {
+        fontWeight: "700",
+        lineHeightRatio: 1.08,
+        autoFit: true,
+      }),
+      box: contentBox(0.31, 0.26),
+    },
+    { ...logoEl(), id: createElementId() },
+  ]);
+}
 
 export const WDC_TEMPLATE_CAPTIONS: Record<string, string> = {
   "wdc-title":

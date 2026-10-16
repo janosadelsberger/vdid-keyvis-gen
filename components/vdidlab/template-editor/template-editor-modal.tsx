@@ -11,8 +11,9 @@ import {
   exportTemplatesJson,
   importTemplatesJsonFile,
   saveCustomTemplatesToStorage,
+  CUSTOM_TEMPLATES_STORAGE_KEY,
   type CustomTemplate,
-  type TemplateElement,
+  type DefaultElementTheme,
 } from "@/lib/custom-template";
 import { squareLogoElements } from "@/lib/lab-layout";
 import { createBuiltinTemplatePreset } from "@/lib/builtin-template-presets";
@@ -35,6 +36,14 @@ export type TemplateEditorModalProps = {
   assets: RenderAssets;
   /** Current preview aspect (width/height) */
   editorAspect: number;
+  storageKey?: string;
+  lockLabLogoSquare?: boolean;
+  createBlankTemplate?: () => CustomTemplate;
+  createFromPreset?: (presetId: string, editorAspect: number) => CustomTemplate | null;
+  presetOptions?: { id: string; name: string }[];
+  defaultElementTheme?: DefaultElementTheme;
+  exportFilename?: string;
+  onResetDefaults?: () => void;
 };
 
 export function TemplateEditorModal({
@@ -44,6 +53,14 @@ export function TemplateEditorModal({
   onTemplatesChange,
   assets,
   editorAspect,
+  storageKey = CUSTOM_TEMPLATES_STORAGE_KEY,
+  lockLabLogoSquare = true,
+  createBlankTemplate,
+  createFromPreset,
+  presetOptions,
+  defaultElementTheme,
+  exportFilename,
+  onResetDefaults,
 }: TemplateEditorModalProps) {
   const [selectedTemplateId, setSelectedTemplateId] = React.useState<string | null>(
     templates[0]?.id ?? null,
@@ -86,36 +103,41 @@ export function TemplateEditorModal({
 
   const persist = (next: CustomTemplate[]) => {
     onTemplatesChange(next);
-    saveCustomTemplatesToStorage(next);
+    saveCustomTemplatesToStorage(next, storageKey);
+  };
+
+  const withEditorGeometry = (template: CustomTemplate): CustomTemplate => {
+    if (!lockLabLogoSquare) return template;
+    return {
+      ...template,
+      baseAspect: editorAspect,
+      elements: squareLogoElements(template.elements, editorAspect),
+    };
   };
 
   const updateTemplate = (updated: CustomTemplate) => {
     persist(
       templates.map((t) =>
-        t.id === updated.id
-          ? {
-              ...updated,
-              baseAspect: editorAspect,
-              elements: squareLogoElements(updated.elements, editorAspect),
-            }
-          : t,
+        t.id === updated.id ? withEditorGeometry(updated) : t,
       ),
     );
   };
 
   const handleNew = () => {
-    const t = createDefaultTemplate();
-    t.baseAspect = editorAspect;
-    t.elements = squareLogoElements(t.elements, editorAspect);
+    const t = withEditorGeometry(createBlankTemplate?.() ?? createDefaultTemplate());
     persist([...templates, t]);
     setSelectedTemplateId(t.id);
     setSelectedElementId(null);
   };
 
   const handleNewFromPreset = (slideType: string) => {
-    const t = createBuiltinTemplatePreset(
-      slideType as Exclude<SlideType, "custom">,
-      editorAspect,
+    const fromPreset = createFromPreset?.(slideType, editorAspect);
+    const t = withEditorGeometry(
+      fromPreset ??
+        createBuiltinTemplatePreset(
+          slideType as Exclude<SlideType, "custom">,
+          editorAspect,
+        ),
     );
     persist([...templates, t]);
     setSelectedTemplateId(t.id);
@@ -125,9 +147,7 @@ export function TemplateEditorModal({
   const handleDuplicate = (id: string) => {
     const src = templates.find((t) => t.id === id);
     if (!src) return;
-    const copy = cloneTemplate(src);
-    copy.baseAspect = editorAspect;
-    copy.elements = squareLogoElements(copy.elements, editorAspect);
+    const copy = withEditorGeometry(cloneTemplate(src));
     persist([...templates, copy]);
     setSelectedTemplateId(copy.id);
   };
@@ -151,10 +171,8 @@ export function TemplateEditorModal({
     const merged = [...templates];
     for (const t of imported) {
       merged.push({
-        ...t,
+        ...withEditorGeometry(t),
         id: crypto.randomUUID(),
-        baseAspect: editorAspect,
-        elements: squareLogoElements(t.elements, editorAspect),
       });
     }
     persist(merged);
@@ -162,17 +180,15 @@ export function TemplateEditorModal({
   };
 
   const editorTemplate = selectedTemplate
-    ? {
-        ...selectedTemplate,
-        baseAspect: editorAspect,
-        elements: squareLogoElements(selectedTemplate.elements, editorAspect),
-      }
+    ? withEditorGeometry(selectedTemplate)
     : null;
 
   const selectedElement =
     editorTemplate?.elements.find((el) => el.id === selectedElementId) ?? null;
 
-  const canvasSize = editorCanvasSizePx(editorAspect);
+  const canvasSize = editorCanvasSizePx(
+    editorTemplate?.baseAspect ?? editorAspect,
+  );
 
   if (!open || typeof document === "undefined") return null;
 
@@ -206,7 +222,9 @@ export function TemplateEditorModal({
               onDuplicate={handleDuplicate}
               onDelete={handleDelete}
               onImport={handleImport}
-              onExport={() => exportTemplatesJson(templates)}
+              onExport={() => exportTemplatesJson(templates, exportFilename)}
+              presetOptions={presetOptions}
+              onResetDefaults={onResetDefaults}
             />
             <input
               ref={importRef}
@@ -225,6 +243,7 @@ export function TemplateEditorModal({
                 selectedElementId={selectedElementId}
                 onSelectElement={setSelectedElementId}
                 onUpdateTemplate={updateTemplate}
+                defaultElementTheme={defaultElementTheme}
               />
             ) : (
               <p className="text-sm text-slate-500 dark:text-slate-400">
